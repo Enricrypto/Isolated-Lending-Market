@@ -48,10 +48,10 @@ contract Market {
         uint256 amount
     );
 
-    event LendTokenDeposited(
+    event LendTokenRegistered(
         address indexed user,
         address indexed borrowableToken,
-        uint256 amount
+        uint256 shares
     );
 
     event LendTokenWithdrawn(
@@ -84,6 +84,12 @@ contract Market {
         require(
             borrowableVaults[borrowableToken] == address(0),
             "Vault already exists for this borrowable asset"
+        );
+
+        // Verify that the vault is an actual ERC4626 contract for the given token
+        require(
+            Vault(vault).asset() == borrowableToken,
+            "Vault does not match borrowable token"
         );
 
         // Add the vault to the borrowableVaults mapping
@@ -159,30 +165,24 @@ contract Market {
         emit CollateralWithdrawn(msg.sender, collateralToken, amount);
     }
 
-    // Function to deposit a loan token into the market contract
-    function depositLendToken(
-        address borrowableToken,
-        uint256 amount
-    ) external {
+    // Users must deposit in the vault first, then call this function
+    function registerLendDeposit(address borrowableToken) external {
         require(
             borrowableVaults[borrowableToken] != address(0),
-            "Borrowable asset not supported"
+            "Vault not found"
         );
-
-        // Ensure the user is allowed to deposit this asset
-        require(amount > 0, "Amount must be greater than zero");
 
         // Get the vault associated with the borrowable token
         Vault vault = Vault(borrowableVaults[borrowableToken]);
 
-        // User deposit the loan token on the vault and receives vault shares
-        vault.deposit(amount, msg.sender);
+        // Get the user's shares in the vault
+        uint256 userShares = vault.balanceOf(msg.sender);
+        require(userShares > 0, "No shares found");
 
-        // Track lend token amount deposited by the user
-        lendAmount[msg.sender][borrowableToken] += amount;
+        // Track the user's shares instead of raw tokens
+        lendAmount[msg.sender][borrowableToken] = userShares;
 
-        // Emit event for logging
-        emit LendTokenDeposited(msg.sender, borrowableToken, amount);
+        emit LendTokenRegistered(msg.sender, borrowableToken, userShares);
     }
 
     // Function to withdraw a loan token from the market contract

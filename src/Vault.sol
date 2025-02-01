@@ -6,6 +6,7 @@ import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 contract Vault is ERC4626 {
+    //Events
     event Deposit(address indexed user, uint256 amount);
     event Withdraw(address indexed user, uint256 amount);
 

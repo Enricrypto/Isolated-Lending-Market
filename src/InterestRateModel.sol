@@ -5,12 +5,15 @@ import "./PriceOracle.sol";
 
 contract InterestRateModel {
     uint256 public baseRate; // // Base interest rate (minimum rate applied to all loans)
-    uint256 public slope; // Slope of the rate curve (i.e.: 10% per full utilization = 10e16)
     uint256 public priceFactor; // Weight for price impact
     uint256 public supplyFactor; // Weight for supply-demand impact
 
     PriceOracle public priceOracle;
     address public owner;
+
+    // Define mappings for asset classification
+    mapping(address => bool) public stablecoins;
+    mapping(address => bool) public blueChipAssets;
 
     mapping(address => uint256) public totalSupply;
     mapping(address => uint256) public totalBorrows;
@@ -21,13 +24,11 @@ contract InterestRateModel {
     constructor(
         address _priceOracle,
         uint256 _baseRate,
-        uint256 _slope,
         uint256 _priceFactor,
         uint256 _supplyFactor
     ) {
         priceOracle = PriceOracle(_priceOracle);
         baseRate = _baseRate;
-        slope = _slope;
         priceFactor = _priceFactor;
         supplyFactor = _supplyFactor;
         owner = msg.sender;
@@ -42,8 +43,18 @@ contract InterestRateModel {
         baseRate = _newBaseRate;
     }
 
-    function setSlope(uint256 _newSlope) external onlyOwner {
-        slope = _newSlope;
+    function getSlope(address asset) public view returns (uint256) {
+        uint256 utilization = getUtilizationRate(asset);
+        uint256 optimalUtilization = 80e16; // 80% optimal threshold
+
+        // Assign different slopes for different asset risk profiles
+        if (isStablecoin(asset)) {
+            return utilization <= optimalUtilization ? 0.05e18 : 0.5e18;
+        } else if (isBlueChipCrypto(asset)) {
+            return utilization <= optimalUtilization ? 0.1e18 : 1.0e18;
+        } else {
+            return utilization <= optimalUtilization ? 0.2e18 : 1.5e18;
+        }
     }
 
     function getUtilizationRate(address asset) public view returns (uint256) {
@@ -69,6 +80,7 @@ contract InterestRateModel {
         uint256 utilization = getUtilizationRate(asset);
         uint256 priceVolatility = getPriceVolatility(asset);
         uint256 supplyDemandRatio = getSupplyDemandRatio(asset);
+        uint256 slope = getSlope(asset); // Dynamically get slope
 
         uint256 rate = baseRate +
             ((slope * utilization) / 1e18) +
@@ -92,5 +104,24 @@ contract InterestRateModel {
 
     function abs(int256 x) private pure returns (uint256) {
         return x < 0 ? uint256(-x) : uint256(x);
+    }
+
+    // Function to check if an asset is a stablecoin
+    function isStablecoin(address asset) public view returns (bool) {
+        return stablecoins[asset];
+    }
+
+    // Function to check if an asset is a blue-chip crypto
+    function isBlueChipCrypto(address asset) public view returns (bool) {
+        return blueChipAssets[asset];
+    }
+
+    // Admin function to add assets to categories (onlyOwner pattern recommended)
+    function addStablecoin(address asset) external onlyOwner {
+        stablecoins[asset] = true;
+    }
+
+    function addBlueChipAsset(address asset) external onlyOwner {
+        blueChipAssets[asset] = true;
     }
 }

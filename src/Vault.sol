@@ -61,7 +61,6 @@ contract Vault is ERC4626 {
     // Admin function to repay tokens back to the vault, only callable by the market contract
     function adminRepayFunction(uint256 amount) external onlyOwner {
         uint256 marketBalance = IERC20(loanAsset).balanceOf(marketContract);
-
         // Ensure that the market has enough tokens to repay to the vault
         require(
             marketBalance >= amount,

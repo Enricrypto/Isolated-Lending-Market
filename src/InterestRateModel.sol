@@ -18,6 +18,7 @@ contract InterestRateModel {
     mapping(address => uint256) public totalSupply;
     mapping(address => uint256) public totalBorrows;
     mapping(address => int256) public lastPrice;
+    mapping(address => uint256) public priceVolatility; // Store volatility values
 
     event InterestRateUpdated(address indexed asset, uint256 rate);
 
@@ -63,10 +64,24 @@ contract InterestRateModel {
     }
 
     function getPriceVolatility(address asset) public view returns (uint256) {
+        return priceVolatility[asset];
+    }
+
+    // Separate function to update volatility (called by the owner or periodically)
+    function updatePriceVolatility(address asset) internal onlyOwner {
         int256 latestPrice = priceOracle.getLatestPrice(asset);
-        if (lastPrice[asset] == 0) return 0;
-        uint256 volatility = abs(int256(lastPrice[asset]) - latestPrice);
-        return volatility;
+
+        // If this is the first time, no volatility to calculate
+        if (lastPrice[asset] == 0) {
+            lastPrice[asset] = latestPrice;
+            return;
+        }
+
+        uint256 newVolatility = abs(int256(lastPrice[asset]) - latestPrice);
+        priceVolatility[asset] = newVolatility;
+
+        // Update the last price
+        lastPrice[asset] = latestPrice;
     }
 
     function getSupplyDemandRatio(address asset) public view returns (uint256) {
@@ -78,13 +93,13 @@ contract InterestRateModel {
 
     function getDynamicBorrowRate(address asset) public view returns (uint256) {
         uint256 utilization = getUtilizationRate(asset);
-        uint256 priceVolatility = getPriceVolatility(asset);
+        uint256 assetPriceVolatility = getPriceVolatility(asset);
         uint256 supplyDemandRatio = getSupplyDemandRatio(asset);
         uint256 slope = getSlope(asset); // Dynamically get slope
 
         uint256 rate = baseRate +
             ((slope * utilization) / 1e18) +
-            ((priceFactor * priceVolatility) / 1e18) +
+            ((priceFactor * assetPriceVolatility) / 1e18) +
             ((supplyFactor * supplyDemandRatio) / 1e18);
 
         return rate;
@@ -98,10 +113,7 @@ contract InterestRateModel {
         return (borrowRate * utilization * (1e18 - reserveFactor)) / 1e36;
     }
 
-    function updateLastPrice(address asset) external {
-        lastPrice[asset] = int256(priceOracle.getLatestPrice(asset));
-    }
-
+    // function to calculate the absolute value, making sure is a positive number
     function abs(int256 x) private pure returns (uint256) {
         return x < 0 ? uint256(-x) : uint256(x);
     }

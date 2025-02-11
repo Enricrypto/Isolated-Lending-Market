@@ -113,6 +113,7 @@ contract InterestRateModel {
         return (borrowRate * utilization * (1e18 - reserveFactor)) / 1e36;
     }
 
+    // ======= HELPER FUNCTIONS ========
     // function to calculate the absolute value, making sure is a positive number
     function abs(int256 x) private pure returns (uint256) {
         return x < 0 ? uint256(-x) : uint256(x);

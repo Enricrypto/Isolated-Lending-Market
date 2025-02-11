@@ -9,8 +9,8 @@ import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 contract Market {
     InterestRateModel public interestRateModel;
     PriceOracle public priceOracle;
-    address public loanAsset;
-    address public loanAssetVault;
+    IERC20 public loanAsset;
+    Vault public loanAssetVault;
     address public owner;
 
     // Mapping to track user collateral balances for each collateral token
@@ -76,12 +76,13 @@ contract Market {
         InterestRateModel _interestRateModel,
         PriceOracle _priceOracle,
         address _loanAsset,
+        address _vaultAddress,
         address _owner
     ) {
         interestRateModel = _interestRateModel;
         priceOracle = _priceOracle;
-        loanAsset = _loanAsset;
-        loanAssetVault = _loanAssetVault;
+        loanAsset = IERC20(_loanAsset);
+        loanAssetVault = Vault(_vaultAddress);
         owner = _owner;
     }
 
@@ -192,17 +193,15 @@ contract Market {
         // Ensure the user is not borrowing more than allowed
         require(amount <= maxBorrowAmount, "Borrow amount exceeds LTV limit");
 
-        Vault vault = Vault(loanAssetVault);
-
         // Ensure the vault has enough borrowable funds to lend
-        uint256 availableFunds = vault.totalAssets();
+        uint256 availableFunds = loanAsset.balanceOf(loanAssetVault);
         require(availableFunds >= amount, "Insufficient funds in vault");
 
         // Call Vault's adminBorrowFunction to withdraw funds to Market contract
-        vault.adminBorrowFunction(amount);
+        loanAssetVault.adminBorrowFunction(amount);
 
         // Transfer the borrowed tokens from the market to the borrower
-        IERC20(loanAsset).transfer(msg.sender, amount);
+        loanAsset.transfer(msg.sender, amount);
 
         // Add borrower to the list of borrowers for this token
         if (borrowerPrincipal[msg.sender] == 0) {
@@ -223,7 +222,7 @@ contract Market {
         borrowerPrincipal[msg.sender] += amount;
 
         // Ensure the vault's funds are updated correctly (funds should decrease)
-        uint256 updatedVaultFunds = vault.totalAssets();
+        uint256 updatedVaultFunds = loanAssetVault.totalAssets();
         require(
             updatedVaultFunds < availableFunds,
             "Funds have not been updated"
@@ -254,7 +253,7 @@ contract Market {
         require(amount <= totalDebt, "Repayment amount exceeds debt");
 
         // Transfer repayment amount from the user to the market
-        IERC20(loanAsset).transferFrom(msg.sender, address(this), amount);
+        loanAsset.transferFrom(msg.sender, address(this), amount);
 
         if (amount == totalDebt) {
             // Full repayment
@@ -274,6 +273,13 @@ contract Market {
             }
             emit Repayment(msg.sender, loanAsset, amount);
         }
+
+        // Ensure the vault's funds are updated correctly (funds should decrease)
+        uint256 updatedVaultFunds = loanAssetVault.totalAssets();
+        require(
+            updatedVaultFunds < availableFunds,
+            "Funds have not been updated"
+        );
     }
 
     // Function to set the LTV ratio for a collateral token
@@ -380,20 +386,71 @@ contract Market {
         return totalInterest;
     }
 
+    // This function calculates what will be paid back to the vault
     function borrowedPlusInterest()
         external
         view
         returns (uint256 totalAmount)
     {
         uint256 totalBorrowed = 0;
-        // Loop through all borrowers
+
+        // Loop through all borrowers to calculate total borrowed amount (principal + interest)
         for (uint i = 0; i < borrowers.length; i++) {
             address borrower = borrowers[i];
-            uint256 principal = borrowerPrincipal[borrower]; // Directly use borrowerPrincipal mapping
-            uint256 interest = calculateBorrowerAccruedInterest(borrower);
-            totalBorrowed += principal + interest;
+            uint256 principal = borrowerPrincipal[borrower]; // Principal borrowed by the borrower
+            uint256 interest = calculateBorrowerAccruedInterest(borrower); // Interest owed by the borrower
+
+            totalBorrowed += principal + interest; // Add both principal and interest for each borrower
         }
-        return totalBorrowed;
+
+        // Get the lending rate which includes the reserve factor (protocol's share of the interest)
+        uint256 lendingRate = interestRateModel.getLendingRate(loanAsset);
+
+        // Calculate the interest that will go to the protocol (vault's share)
+        uint256 totalInterestToVault = (totalBorrowed * lendingRate) / 1e18;
+
+        // The total amount that will be repaid to the vault
+        totalAmount = totalBorrowed + totalInterestToVault;
+
+        return totalAmount;
+    }
+
+    function calculateRepaymentToVault() external view returns (uint256) {
+        uint256 totalPrincipal = 0;
+        uint256 totalBorrowerInterest = 0;
+
+        // Loop through all borrowers to calculate total principal and interest separately
+        for (uint i = 0; i < borrowers.length; i++) {
+            address borrower = borrowers[i];
+            totalPrincipal += borrowerPrincipal[borrower]; // Principal borrowed by borrower
+            totalBorrowerInterest += calculateBorrowerAccruedInterest(borrower); // Interest owed by borrower
+        }
+
+        // Get the lending rate which already accounts for the reserve factor
+        uint256 lendingRate = interestRateModel.getLendingRate(loanAsset);
+
+        // Calculate how much of the interest collected by the market will go to the vault
+        uint256 vaultInterest = (totalBorrowerInterest * lendingRate) / 1e18;
+
+        // The total amount repaid to the vault is the principal + vault’s share of the interest
+        uint256 totalRepaymentToVault = totalPrincipal + vaultInterest;
+
+        return totalRepaymentToVault;
+    }
+
+    function repayToVault() external {
+        // Calculate the amount to be repaid to the vault
+        uint256 totalRepaymentToVault = calculateRepaymentToVault();
+
+        // Ensure the market has enough funds
+        uint256 marketBalance = loanAsset.balanceOf(address(this));
+        require(
+            marketBalance >= totalRepaymentToVault,
+            "Insufficient funds to repay vault"
+        );
+
+        // Transfer funds to the vault
+        loanAssetVault.adminRepayFunction(totalRepaymentToVault);
     }
 
     // ======= HELPER FUNCTIONS ========

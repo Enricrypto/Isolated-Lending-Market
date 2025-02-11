@@ -10,7 +10,7 @@ contract Vault is ERC4626 {
     event Deposit(address indexed user, uint256 amount);
     event Withdraw(address indexed user, uint256 amount);
 
-    address public loanAsset; // Store the borrowable token
+    IERC20 public loanAsset; // Store the borrowable token
     address public marketContract; // Store the market
 
     constructor(
@@ -19,7 +19,7 @@ contract Vault is ERC4626 {
         string memory _name, // name of the vault share token
         string memory _symbol // symbol of the vault share token
     ) ERC20(_name, _symbol) ERC4626(IERC20(_asset)) {
-        loanAsset = _asset;
+        loanAsset = IERC20(_asset);
         marketContract = _marketContract;
     }
 
@@ -53,14 +53,14 @@ contract Vault is ERC4626 {
         require(availableFunds >= amount, "Insufficient funds in vault");
 
         // Transfer tokens directly from vault to market (without burning shares)
-        IERC20(loanAsset).transfer(msg.sender, amount);
+        loanAsset.transfer(msg.sender, amount);
 
         emit BorrowedByMarket(msg.sender, amount);
     }
 
     // Admin function to repay tokens back to the vault, only callable by the market contract
     function adminRepayFunction(uint256 amount) external onlyOwner {
-        uint256 marketBalance = IERC20(loanAsset).balanceOf(marketContract);
+        uint256 marketBalance = loanAsset.balanceOf(marketContract);
         // Ensure that the market has enough tokens to repay to the vault
         require(
             marketBalance >= amount,
@@ -68,7 +68,7 @@ contract Vault is ERC4626 {
         );
 
         // Transfer tokens from market to vault (without burning shares)
-        IERC20(loanAsset).transferFrom(msg.sender, address(this), amount);
+        loanAsset.transferFrom(msg.sender, address(this), amount);
 
         // Emit an event for the repayment action
         emit RepaidToVault(msg.sender, amount);

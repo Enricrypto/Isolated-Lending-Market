@@ -12,6 +12,7 @@ contract Market {
     IERC20 public loanAsset;
     Vault public loanAssetVault;
     address public owner;
+    uint256 public totalRepaid; // Tracks total repaid by borrowers
 
     // Mapping to track user collateral balances for each collateral token
     mapping(address => mapping(address => uint256))
@@ -273,6 +274,8 @@ contract Market {
             }
             emit Repayment(msg.sender, loanAsset, amount);
         }
+        // Track how much has been repaid
+        totalRepaid += amount;
 
         // Ensure the vault's funds are updated correctly (funds should decrease)
         uint256 updatedVaultFunds = loanAssetVault.totalAssets();
@@ -387,35 +390,7 @@ contract Market {
     }
 
     // This function calculates what will be paid back to the vault
-    function borrowedPlusInterest()
-        external
-        view
-        returns (uint256 totalAmount)
-    {
-        uint256 totalBorrowed = 0;
-
-        // Loop through all borrowers to calculate total borrowed amount (principal + interest)
-        for (uint i = 0; i < borrowers.length; i++) {
-            address borrower = borrowers[i];
-            uint256 principal = borrowerPrincipal[borrower]; // Principal borrowed by the borrower
-            uint256 interest = calculateBorrowerAccruedInterest(borrower); // Interest owed by the borrower
-
-            totalBorrowed += principal + interest; // Add both principal and interest for each borrower
-        }
-
-        // Get the lending rate which includes the reserve factor (protocol's share of the interest)
-        uint256 lendingRate = interestRateModel.getLendingRate(loanAsset);
-
-        // Calculate the interest that will go to the protocol (vault's share)
-        uint256 totalInterestToVault = (totalBorrowed * lendingRate) / 1e18;
-
-        // The total amount that will be repaid to the vault
-        totalAmount = totalBorrowed + totalInterestToVault;
-
-        return totalAmount;
-    }
-
-    function calculateRepaymentToVault() external view returns (uint256) {
+    function borrowedPlusInterest() external view returns (uint256) {
         uint256 totalPrincipal = 0;
         uint256 totalBorrowerInterest = 0;
 
@@ -439,18 +414,17 @@ contract Market {
     }
 
     function repayToVault() external {
-        // Calculate the amount to be repaid to the vault
-        uint256 totalRepaymentToVault = calculateRepaymentToVault();
+        require(totalRepaid > 0, "No repayments available to send to vault");
 
         // Ensure the market has enough funds
         uint256 marketBalance = loanAsset.balanceOf(address(this));
-        require(
-            marketBalance >= totalRepaymentToVault,
-            "Insufficient funds to repay vault"
-        );
+        require(marketBalance >= totalRepaid, "Insufficient funds in market");
 
         // Transfer funds to the vault
         loanAssetVault.adminRepayFunction(totalRepaymentToVault);
+
+        // Reset the repayment tracker
+        totalRepaid = 0;
     }
 
     // ======= HELPER FUNCTIONS ========

@@ -106,7 +106,7 @@ contract Market {
         // Mark the collateral token as supported
         supportedCollateralTokens[collateralToken] = true;
 
-        // Set the LTV ratio for that specific collateral token (users can define their own LTV for now)
+        // Set the LTV ratio for that specific collateral token (admin can define LTV)
         setLTVRatio(collateralToken, ltvRatio);
 
         // Add collateral to array to track all supported collateral tokens

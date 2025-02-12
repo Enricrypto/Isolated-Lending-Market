@@ -36,7 +36,10 @@ contract InterestRateModel {
     }
 
     modifier onlyOwner() {
-        require(msg.sender == owner);
+        require(
+            msg.sender == owner,
+            "Only contract owner can execute this function"
+        );
         _;
     }
 
@@ -68,7 +71,7 @@ contract InterestRateModel {
     }
 
     // Separate function to update volatility (called by the owner or periodically)
-    function updatePriceVolatility(address asset) internal onlyOwner {
+    function updatePriceVolatility(address asset) external onlyOwner {
         int256 latestPrice = priceOracle.getLatestPrice(asset);
 
         // If this is the first time, no volatility to calculate

@@ -373,7 +373,7 @@ contract Market {
         return totalInterest;
     }
 
-    // This function calculates what will be paid back to the vault
+    // This function calculates what should be paid back to the vault (including interests - reserve factor)
     function borrowedPlusInterest() external view returns (uint256) {
         uint256 totalPrincipal = 0;
         uint256 totalBorrowerInterest = 0;
@@ -397,6 +397,7 @@ contract Market {
         return totalRepaymentToVault;
     }
 
+    // DECIDE HOW TO CALL THIS FUNCTION - AUTOMATED CODE
     function repayToVault() external {
         require(totalRepaid > 0, "No repayments available to send to vault");
 

@@ -222,13 +222,6 @@ contract Market {
         // Update borrowed amount tracking
         borrowerPrincipal[msg.sender] += amount;
 
-        // Ensure the vault's funds are updated correctly (funds should decrease)
-        uint256 updatedVaultFunds = loanAssetVault.totalAssets();
-        require(
-            updatedVaultFunds < availableFunds,
-            "Funds have not been updated"
-        );
-
         // Emit event for borrowed
         emit Borrowed(
             msg.sender,
@@ -258,31 +251,22 @@ contract Market {
 
         if (amount == totalDebt) {
             // Full repayment
-            principal = 0;
+            borrowerPrincipal[msg.sender] = 0;
             // Remove borrower from the list of borrowers
             removeFromBorrowerList(msg.sender);
-            emit Repayment(msg.sender, loanAsset, amount);
         } else {
-            // Partial repayment logic
             if (amount <= interest) {
-                // If the repayment is less than or equal to the interest, reduce the interest amount
-                emit Repayment(msg.sender, loanAsset, amount);
+                // Only reducing interest; no change in principal
             } else {
                 // Pay interest first, then reduce principal
                 uint256 remainingAfterInterest = amount - interest;
-                principal -= remainingAfterInterest;
+                borrowerPrincipal[msg.sender] -= remainingAfterInterest;
             }
-            emit Repayment(msg.sender, loanAsset, amount);
         }
         // Track how much has been repaid
         totalRepaid += amount;
 
-        // Ensure the vault's funds are updated correctly (funds should decrease)
-        uint256 updatedVaultFunds = loanAssetVault.totalAssets();
-        require(
-            updatedVaultFunds < availableFunds,
-            "Funds have not been updated"
-        );
+        emit Repayment(msg.sender, loanAsset, amount);
     }
 
     // Function to set the LTV ratio for a collateral token

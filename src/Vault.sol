@@ -47,7 +47,7 @@ contract Vault is ERC4626 {
         address receiver,
         address owner
     ) public override returns (uint256 shares) {
-        shares = _withdraw(amount, msg.sender, msg.sender);
+        shares = _withdraw(amount, receiver, owner);
         return shares;
     }
 

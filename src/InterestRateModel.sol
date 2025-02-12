@@ -66,27 +66,6 @@ contract InterestRateModel {
         return (totalBorrows[asset] * 1e18) / totalSupply[asset];
     }
 
-    function getPriceVolatility(address asset) public view returns (uint256) {
-        return priceVolatility[asset];
-    }
-
-    // Separate function to update volatility (called by the owner or periodically)
-    function updatePriceVolatility(address asset) external onlyOwner {
-        int256 latestPrice = priceOracle.getLatestPrice(asset);
-
-        // If this is the first time, no volatility to calculate
-        if (lastPrice[asset] == 0) {
-            lastPrice[asset] = latestPrice;
-            return;
-        }
-
-        uint256 newVolatility = abs(int256(lastPrice[asset]) - latestPrice);
-        priceVolatility[asset] = newVolatility;
-
-        // Update the last price
-        lastPrice[asset] = latestPrice;
-    }
-
     function getSupplyDemandRatio(address asset) public view returns (uint256) {
         if (totalSupply[asset] == 0) return 0;
         return

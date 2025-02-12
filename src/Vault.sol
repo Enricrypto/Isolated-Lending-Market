@@ -13,22 +13,20 @@ contract Vault is ERC4626 {
     event BorrowedByMarket(address indexed market, uint256 amount);
     event RepaidToVault(address indexed market, uint256 amount);
 
-    IERC20 public loanAsset; // Store the borrowable token
     Market public market; // Store the market
 
     constructor(
-        address _asset,
+        IERC20 _asset,
         address _marketContract,
         string memory _name, // name of the vault share token
         string memory _symbol // symbol of the vault share token
     ) ERC20(_name, _symbol) ERC4626(IERC20(_asset)) {
-        loanAsset = IERC20(_asset);
         market = Market(_marketContract);
     }
 
-    modifier onlyOwner() {
+    modifier onlyMarket() {
         require(
-            msg.sender == market,
+            msg.sender == address(market),
             "Only Market contract can execute this function"
         );
         _;
@@ -54,27 +52,17 @@ contract Vault is ERC4626 {
     }
 
     // Admin function to borrow tokens, only callable by the market contract
-    function adminBorrowFunction(uint256 amount) external onlyOwner {
-        uint256 availableFunds = totalAssets();
-        require(availableFunds >= amount, "Insufficient funds in vault");
-
+    function adminBorrowFunction(uint256 amount) external onlyMarket {
         // Transfer tokens directly from vault to market (without burning shares)
-        loanAsset.transfer(msg.sender, amount);
+        asset().transfer(msg.sender, amount);
 
         emit BorrowedByMarket(msg.sender, amount);
     }
 
     // Admin function to repay tokens back to the vault, only callable by the market contract
-    function adminRepayFunction(uint256 amount) external onlyOwner {
-        uint256 marketBalance = loanAsset.balanceOf(market);
-        // Ensure that the market has enough tokens to repay to the vault
-        require(
-            marketBalance >= amount,
-            "Insufficient funds in the market to repay"
-        );
-
+    function adminRepayFunction(uint256 amount) external onlyMarket {
         // Transfer tokens from market to vault (without burning shares)
-        loanAsset.transferFrom(msg.sender, address(this), amount);
+        asset().transferFrom(msg.sender, address(this), amount);
 
         // Emit an event for the repayment action
         emit RepaidToVault(msg.sender, amount);
@@ -82,7 +70,7 @@ contract Vault is ERC4626 {
 
     function totalAssets() public view override returns (uint256) {
         // Get the asset balance of the vault
-        uint256 totalVaultAssets = convertToAssets(balanceOf(address(this)));
+        uint256 totalVaultAssets = asset().balanceOf(address(this));
 
         // Calculate the total borrowed amount plus interest for the borrowable token
         uint256 totalBorrowedPlusInterest = market.borrowedPlusInterest();

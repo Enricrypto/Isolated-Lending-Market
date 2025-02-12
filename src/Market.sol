@@ -25,11 +25,13 @@ contract Market {
     mapping(address => uint256) public borrowerPrincipal; // User -> Amount
 
     // Mapping to track the last interest rate at the time of borrowing
+    // CHANGE IT TO A FUNCTION
     mapping(address => uint256) public borrowRateAtTime; // User -> Rate
 
     // Mapping to track the last update time for interest calculation
     mapping(address => uint256) public borrowTimestamp; // User -> Timestamp
 
+    // CHANGE IT TO A FUNCTION
     // Mapping to track the amount of interest accumulated
     mapping(address => uint256) public borrowerInterestAccrued; // User -> Interest
 
@@ -161,6 +163,7 @@ contract Market {
         emit CollateralDeposited(msg.sender, collateralToken, amount);
     }
 
+    // THE WITHDRAWAL NEEDS TO CALCULATE THAT WHEN WITHDRAWING THIS WON'T BRING YOU UNDER THE LTV RATIO
     function withdrawCollateral(
         address collateralToken,
         uint256 amount
@@ -188,15 +191,11 @@ contract Market {
         // Get the user's collateral value
         uint256 userCollateralValue = getTotalCollateralValue(msg.sender);
 
+        // NEEDS TO BE A FUNCTION
         // Calculate the max borrowable amount (LTV)
         uint256 maxBorrowAmount = userCollateralValue;
-
         // Ensure the user is not borrowing more than allowed
         require(amount <= maxBorrowAmount, "Borrow amount exceeds LTV limit");
-
-        // Ensure the vault has enough borrowable funds to lend
-        uint256 availableFunds = loanAsset.balanceOf(loanAssetVault);
-        require(availableFunds >= amount, "Insufficient funds in vault");
 
         // Call Vault's adminBorrowFunction to withdraw funds to Market contract
         loanAssetVault.adminBorrowFunction(amount);

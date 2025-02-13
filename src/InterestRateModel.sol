@@ -1,37 +1,32 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "./PriceOracle.sol";
+import "./Market.sol";
 
 contract InterestRateModel {
-    uint256 public baseRate; // // Base interest rate (minimum rate applied to all loans)
-    uint256 public priceFactor; // Weight for price impact
-    uint256 public supplyFactor; // Weight for supply-demand impact
+    uint256 public baseRate; // Base interest rate (minimum rate applied to all loans)
+    uint256 public optimalUtilization; // Optimal utilization threshold (e.g.: 80%)
+    uint256 public slope1; // Slope before reaching optimal utilization
+    uint256 public slope2; // Slope after reaching optimal utilization
+    uint256 public reserveFactor; // Percentage of interest reserved for protocol
 
-    PriceOracle public priceOracle;
     address public owner;
-
-    // Define mappings for asset classification
-    mapping(address => bool) public stablecoins;
-    mapping(address => bool) public blueChipAssets;
-
-    mapping(address => uint256) public totalSupply;
-    mapping(address => uint256) public totalBorrows;
-    mapping(address => int256) public lastPrice;
-    mapping(address => uint256) public priceVolatility; // Store volatility values
+    Market public marketContract; // Address of marketContract to fetch supply/borrow data
 
     event InterestRateUpdated(address indexed asset, uint256 rate);
 
     constructor(
-        address _priceOracle,
         uint256 _baseRate,
-        uint256 _priceFactor,
-        uint256 _supplyFactor
+        uint256 _optimalUtilization,
+        uint256 _slope1,
+        uint256 _slope2,
+        uint256 _reserveFactor
     ) {
-        priceOracle = PriceOracle(_priceOracle);
         baseRate = _baseRate;
-        priceFactor = _priceFactor;
-        supplyFactor = _supplyFactor;
+        optimalUtilization = _optimalUtilization;
+        slope1 = _slope1;
+        slope2 = _slope2;
+        reserveFactor = _reserveFactor;
         owner = msg.sender;
     }
 
@@ -43,80 +38,72 @@ contract InterestRateModel {
         _;
     }
 
+    function setMarketContract(address _marketContract) external onlyOwner {
+        marketContract = Market(_marketContract);
+    }
+
     function setBaseRate(uint256 _newBaseRate) external onlyOwner {
         baseRate = _newBaseRate;
     }
 
-    function getSlope(address asset) public view returns (uint256) {
-        uint256 utilization = getUtilizationRate(asset);
-        uint256 optimalUtilization = 80e16; // 80% optimal threshold
+    function setOptimalUtilization(
+        uint256 _newOptimalUtilization
+    ) external onlyOwner {
+        optimalUtilization = _newOptimalUtilization;
+    }
 
-        // Assign different slopes for different asset risk profiles
-        if (isStablecoin(asset)) {
-            return utilization <= optimalUtilization ? 0.05e18 : 0.5e18;
-        } else if (isBlueChipCrypto(asset)) {
-            return utilization <= optimalUtilization ? 0.1e18 : 1.0e18;
+    function setSlope1(uint256 _newSlope1) external onlyOwner {
+        slope1 = _newSlope1;
+    }
+
+    function setSlope2(uint256 _newSlope2) external onlyOwner {
+        slope2 = _newSlope2;
+    }
+
+    function setReserveFactor(uint256 _newReserveFactor) external onlyOwner {
+        reserveFactor = _newReserveFactor;
+    }
+
+    // Fetch total supply from Market Contract
+    function getTotalSupply(address asset) public view returns (uint256) {
+        return marketContract.totalSupply(asset);
+    }
+
+    // Fetch total borrows from Market Contract
+    function getTotalBorrows(address asset) public view returns (uint256) {
+        return marketContract.totalBorrows(asset);
+    }
+
+    // Calculate utilization rate: U = totalBorrows / totalSupply
+    function getUtilizationRate(address asset) public view returns (uint256) {
+        uint256 totalSupply = getTotalSupply(asset);
+        uint256 totalBorrows = getTotalBorrows(asset);
+        if (totalSupply == 0) return 0;
+        return (totalBorrows * 1e18) / totalSupply;
+    }
+
+    // Calculate the dynamic borrow rate based on Jump-Rate model
+    function getDynamicBorrowRate(address asset) public view returns (uint256) {
+        uint256 utilization = getUtilizationRate(asset);
+
+        if (utilization < optimalUtilization) {
+            // Below optimal utilization: use slope1
+            return baseRate + (utilization * slope1) / 1e18;
         } else {
-            return utilization <= optimalUtilization ? 0.2e18 : 1.5e18;
+            // Above optima utilization: use slope2 (steep increase)
+            uint256 excessUtilization = utilization - optimalUtilization;
+            return
+                baseRate +
+                ((optimalUtilization * slope1) / 1e18) +
+                ((excessUtilization * slope2) / 1e18);
         }
     }
 
-    function getUtilizationRate(address asset) public view returns (uint256) {
-        if (totalSupply[asset] == 0) return 0;
-        return (totalBorrows[asset] * 1e18) / totalSupply[asset];
-    }
-
-    function getSupplyDemandRatio(address asset) public view returns (uint256) {
-        if (totalSupply[asset] == 0) return 0;
-        return
-            ((totalSupply[asset] - totalBorrows[asset]) * 1e18) /
-            totalSupply[asset];
-    }
-
-    function getDynamicBorrowRate(address asset) public view returns (uint256) {
-        uint256 utilization = getUtilizationRate(asset);
-        uint256 assetPriceVolatility = getPriceVolatility(asset);
-        uint256 supplyDemandRatio = getSupplyDemandRatio(asset);
-        uint256 slope = getSlope(asset); // Dynamically get slope
-
-        uint256 rate = baseRate +
-            ((slope * utilization) / 1e18) +
-            ((priceFactor * assetPriceVolatility) / 1e18) +
-            ((supplyFactor * supplyDemandRatio) / 1e18);
-
-        return rate;
-    }
-
+    // Calculate lending rate: R_lending = R_borrow * U * (1 - reserveFactor)
     function getLendingRate(address asset) public view returns (uint256) {
         uint256 utilization = getUtilizationRate(asset);
         uint256 borrowRate = getDynamicBorrowRate(asset);
-        uint256 reserveFactor = 10e16; // Example: 10% protocol fee
 
         return (borrowRate * utilization * (1e18 - reserveFactor)) / 1e36;
-    }
-
-    // ======= HELPER FUNCTIONS ========
-    // function to calculate the absolute value, making sure is a positive number
-    function abs(int256 x) private pure returns (uint256) {
-        return x < 0 ? uint256(-x) : uint256(x);
-    }
-
-    // Function to check if an asset is a stablecoin
-    function isStablecoin(address asset) public view returns (bool) {
-        return stablecoins[asset];
-    }
-
-    // Function to check if an asset is a blue-chip crypto
-    function isBlueChipCrypto(address asset) public view returns (bool) {
-        return blueChipAssets[asset];
-    }
-
-    // Admin function to add assets to categories (onlyOwner pattern recommended)
-    function addStablecoin(address asset) external onlyOwner {
-        stablecoins[asset] = true;
-    }
-
-    function addBlueChipAsset(address asset) external onlyOwner {
-        blueChipAssets[asset] = true;
     }
 }

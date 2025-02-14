@@ -20,13 +20,15 @@ contract InterestRateModel {
         uint256 _optimalUtilization,
         uint256 _slope1,
         uint256 _slope2,
-        uint256 _reserveFactor
+        uint256 _reserveFactor,
+        address _marketContract
     ) {
         baseRate = _baseRate;
         optimalUtilization = _optimalUtilization;
         slope1 = _slope1;
         slope2 = _slope2;
         reserveFactor = _reserveFactor;
+        marketContract = _Market(_marketContract);
         owner = msg.sender;
     }
 

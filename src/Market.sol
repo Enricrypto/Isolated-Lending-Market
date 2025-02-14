@@ -170,7 +170,6 @@ contract Market {
                 break;
             }
         }
-
         emit CollateralTokenRemoved(collateralToken);
     }
 

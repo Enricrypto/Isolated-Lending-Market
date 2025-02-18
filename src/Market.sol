@@ -28,6 +28,15 @@ contract Market {
     // Mapping to track total debt of each user
     mapping(address => uint256) public userTotalDebt;
 
+    // Tracks the last time the user borrowed
+    mapping(address => uint256) public lastUpdated;
+
+    // Mapping to store the borrower's debt at the last update
+    mapping(address => uint256) public lastDebt;
+
+    // Stores borrow rate for each block timestamp
+    mapping(uint256 => uint256) public borrowRates;
+
     // Mapping to store the LTV ratio for each collateral token
     mapping(address => uint256) public ltvRatios;
 
@@ -50,6 +59,7 @@ contract Market {
         uint256 amount
     );
     event LTVRatioSet(address indexed collateralToken, uint256 ltvRatio);
+    event Borrow(address indexed user, uint256 loanAmount, uint256 borrowRate);
 
     constructor(
         address _vaultContract,
@@ -230,15 +240,7 @@ contract Market {
         // Ensure the loan amount is valid
         require(loanAmount > 0, "Loan amount must be greater than zero");
 
-        // Ensure user has enough borrowing power
-        uint256 borrowingPower = getUserTotalBorrowingPower(msg.sender);
-
-        // MAKE SURE THE USER HAS ENOUGH BORROWING POWER CONSIDERING DEBT
-        // Get the user's total outstanding debt before borrowing
-        uint256 totalDebt = getUserTotalDebt(msg.sender);
-
-        // Calculate the actual available borrowing power
-        uint256 availableBorrowingPower = borrowingPower - totalDebt;
+        uint256 availableBorrowingPower = getMaxBorrowingPower(msg.sender);
 
         // Ensure user has enough borrowing power to take this loan
         require(
@@ -246,22 +248,35 @@ contract Market {
             "Not enough borrowing power to take this loan"
         );
 
-        // Get the current borrow rate from the InterestRateModel
-        uint256 borrowRate = interestRateModel.getDynamicBorrowRate(
-            address(loanAsset)
-        );
-
-        // Update the user's total debt
-        userTotalDebt[msg.sender] += loanAmount;
-
-        // Update the total borrows
-        totalBorrows += loanAmount;
+        // Fetch the borrow rate at this moment
+        uint256 currentBorrowRate = interestRateModel.getDynamicBorrowRate();
 
         // Call Vault's adminBorrowFunction to withdraw funds to Market contract
         vaultContract.adminBorrowFunction(loanAmount);
 
         // Transfer the loaned amount from the market to the user
         loanAsset.transfer(msg.sender, loanAmount);
+
+        uint256 accruedInterest = borrowerInterestAccrued(msg.sender);
+
+        if (userTotalDebt[msg.sender] == 0) {
+            // First-time borrower: Initialize debt & timestamps
+            userTotalDebt[msg.sender] = loanAmount;
+            lastDebt[msg.sender] = loanAmount;
+        } else {
+            // Existing borrower: Add accrued interest + new loan
+            userTotalDebt[msg.sender] += loanAmount + accruedInterest;
+            lastDebt[msg.sender] = userTotalDebt[msg.sender]; // Update last debt after adding interest
+        }
+
+        // Update last updated time and store borrow rate at this moment
+        lastUpdated[msg.sender] = block.timestamp;
+        lastBorrowRate[msg.sender] = currentBorrowRate; // Store the rate at time of borrowing
+
+        // Update the total borrows
+        totalBorrows += loanAmount;
+
+        emit Borrow(msg.sender, loanAmount, currentBorrowRate);
     }
 
     // ======= HELPER FUNCTIONS ========
@@ -341,5 +356,48 @@ contract Market {
     ) public view returns (uint256 totalDebt) {
         totalDebt = userTotalDebt[user];
         return totalDebt;
+    }
+
+    // Helper function to calculate teh maximum borrowing power of a user
+    function getMaxBorrowingPower(address user) public view returns (uint256) {
+        uint256 borrowingPower = getUserTotalBorrowingPower(user);
+        uint256 totalDebt = getUserTotalDebt(user);
+
+        uint256 maxBorrowingPower = borrowingPower - totalDebt;
+        return maxBorrowingPower;
+    }
+
+    // Helper function to calculate accrued interest on a debt considering dynamic rates
+    function borrowerInterestAccrued(
+        address borrower
+    ) public view returns (uint256) {
+        uint256 lastUpdate = lastUpdated[borrower];
+
+        // If the borrower hasn't borrow yet, no interest has accrued
+        if (lastUpdate == 0) {
+            return 0;
+        }
+
+        uint256 currentTime = block.timestamp; // current time
+        uint256 timeElapsed = currentTime - lastUpdate;
+
+        // Fetch the borrow rate at the time of the last update
+        uint256 lastRate = borrowRateAtTime(borrower);
+
+        // Calculate the interest accrued over the elapsed time period
+        uint256 interestAccrued = (userTotalDebt[borrower] *
+            lastRate *
+            timeElapsed) / (365 days * 100); // assume yearly rate
+
+        return interestAccrued;
+    }
+
+    // Helper function to calculate thge borrow rate in effect at the borrower's last updated time
+    function borrowRateAtTime(address borrower) public view returns (uint256) {
+        if (lastUpdated[borrower] == 0) {
+            return interestRateModel.getDynamicBorrowRate(); // Default to current rate if no previous record
+        }
+
+        return lastBorrowRate[borrower]; // Return the stored rate at last update
     }
 }

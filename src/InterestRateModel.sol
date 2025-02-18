@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import "./Vault.sol";
 import "./Market.sol";
 
 contract InterestRateModel {
@@ -11,6 +12,7 @@ contract InterestRateModel {
     uint256 public reserveFactor; // Percentage of interest reserved for protocol
 
     address public owner;
+    Vault public vaultContract;
     Market public marketContract; // Address of marketContract to fetch supply/borrow data
 
     event InterestRateUpdated(address indexed asset, uint256 rate);
@@ -21,6 +23,7 @@ contract InterestRateModel {
         uint256 _slope1,
         uint256 _slope2,
         uint256 _reserveFactor,
+        address _vaultContract,
         address _marketContract
     ) {
         baseRate = _baseRate;
@@ -28,7 +31,8 @@ contract InterestRateModel {
         slope1 = _slope1;
         slope2 = _slope2;
         reserveFactor = _reserveFactor;
-        marketContract = _Market(_marketContract);
+        vaultContract = Vault(_vaultContract);
+        marketContract = Market(_marketContract);
         owner = msg.sender;
     }
 
@@ -67,26 +71,29 @@ contract InterestRateModel {
     }
 
     // Fetch total supply from Market Contract
-    function getTotalSupply(address asset) public view returns (uint256) {
-        return marketContract.totalSupply(asset);
+    function getTotalSupply() public view returns (uint256) {
+        return
+            vaultContract.convertToAssets(
+                vaultContract.balanceOf(address(this))
+            );
     }
 
     // Fetch total borrows from Market Contract
-    function getTotalBorrows(address asset) public view returns (uint256) {
-        return marketContract.totalBorrows(asset);
+    function getTotalBorrows() public view returns (uint256) {
+        return marketContract.totalBorrows();
     }
 
     // Calculate utilization rate: U = totalBorrows / totalSupply
-    function getUtilizationRate(address asset) public view returns (uint256) {
-        uint256 totalSupply = getTotalSupply(asset);
-        uint256 totalBorrows = getTotalBorrows(asset);
+    function getUtilizationRate() public view returns (uint256) {
+        uint256 totalSupply = getTotalSupply();
+        uint256 totalBorrows = getTotalBorrows();
         if (totalSupply == 0) return 0;
         return (totalBorrows * 1e18) / totalSupply;
     }
 
     // Calculate the dynamic borrow rate based on Jump-Rate model
-    function getDynamicBorrowRate(address asset) public view returns (uint256) {
-        uint256 utilization = getUtilizationRate(asset);
+    function getDynamicBorrowRate() public view returns (uint256) {
+        uint256 utilization = getUtilizationRate();
 
         if (utilization < optimalUtilization) {
             // Below optimal utilization: use slope1
@@ -102,9 +109,9 @@ contract InterestRateModel {
     }
 
     // Calculate lending rate: R_lending = R_borrow * U * (1 - reserveFactor)
-    function getLendingRate(address asset) public view returns (uint256) {
-        uint256 utilization = getUtilizationRate(asset);
-        uint256 borrowRate = getDynamicBorrowRate(asset);
+    function getLendingRate() public view returns (uint256) {
+        uint256 utilization = getUtilizationRate();
+        uint256 borrowRate = getDynamicBorrowRate();
 
         return (borrowRate * utilization * (1e18 - reserveFactor)) / 1e36;
     }

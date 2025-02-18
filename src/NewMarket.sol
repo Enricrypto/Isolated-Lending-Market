@@ -4,11 +4,13 @@ pragma solidity ^0.8.0;
 import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 import "./Vault.sol";
 import "./PriceOracle.sol";
+import "./InterestRateModel.sol";
 
 contract newMarket {
     address public owner; // Admin address
     Vault public vaultContract;
     PriceOracle public priceOracle;
+    InterestRateModel public interestRateModel;
     IERC20 public loanAsset;
 
     uint256 public totalBorrows; // Tracks total borrowed amount for the loan asset
@@ -52,11 +54,13 @@ contract newMarket {
     constructor(
         address _vaultContract,
         address _priceOracle,
+        address _interestRateModel,
         address _loanAsset
     ) {
         owner = msg.sender;
         vaultContract = Vault(_vaultContract);
         priceOracle = PriceOracle(_priceOracle);
+        interestRateModel = InterestRateModel(_interestRateModel);
         loanAsset = _loanAsset;
     }
 
@@ -228,23 +232,17 @@ contract newMarket {
 
         // Ensure user has enough borrowing power
         uint256 borrowingPower = getUserTotalBorrowingPower(msg.sender);
-        require(borrowingPower >= loanAmount, "Not enough borrowing power");
 
         // MAKE SURE THE USER HAS ENOUGH BORROWING POWER CONSIDERING DEBT
         // Get the user's total outstanding debt before borrowing
         uint256 totalDebt = getUserTotalDebt(msg.sender);
 
-        // Calculate the new total debt after borrowing
-        uint256 newTotalDebt = totalDebt + loanAmount;
+        // Calculate the actual available borrowing power
+        uint256 availableBorrowingPower = borrowingPower - totalDebt;
 
-        // Ensure user can still borrow based on their remaining borrowing power
-        uint256 remainingBorrowingPower = totalBorrowingPower > loanAmount
-            ? totalBorrowingPower - loanAmount
-            : 0;
-
-        // Check if the remaining borrowing power after borrowing is sufficient to cover total debt
+        // Ensure user has enough borrowing power to take this loan
         require(
-            remainingBorrowingPower >= newTotalDebt,
+            availableBorrowingPower >= loanAmount,
             "Not enough borrowing power to take this loan"
         );
 

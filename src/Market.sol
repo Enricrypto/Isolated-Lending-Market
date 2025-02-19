@@ -13,7 +13,14 @@ contract Market {
     InterestRateModel public interestRateModel;
     IERC20 public loanAsset;
 
-    uint256 public totalBorrows; // Tracks total borrowed amount for the loan asset
+    // Tracks total borrowed amount for the loan asset
+    uint256 public totalBorrows;
+
+    // Global borrow index
+    uint256 public globalBorrowIndex = 1e18; // Start with an initial index value
+
+    // Track the last block where the global borrow index was updated
+    uint256 public lastGlobalUpdateBlock;
 
     // Mapping to track the supported collateral tokens
     mapping(address => bool) public supportedCollateralTokens;
@@ -28,14 +35,8 @@ contract Market {
     // Mapping to track total debt of each user
     mapping(address => uint256) public userTotalDebt;
 
-    // Tracks the last time the user borrowed
-    mapping(address => uint256) public lastUpdated;
-
-    // Mapping to store the borrower's debt at the last update
-    mapping(address => uint256) public lastDebt;
-
-    // Stores borrow rate for each block timestamp
-    mapping(uint256 => uint256) public borrowRates;
+    // Track the last block number each user took a loan
+    mapping(address => uint256) public lastUpdatedBlock;
 
     // Mapping to store the LTV ratio for each collateral token
     mapping(address => uint256) public ltvRatios;
@@ -249,7 +250,7 @@ contract Market {
         );
 
         // Fetch the borrow rate at this moment
-        uint256 currentBorrowRate = interestRateModel.getDynamicBorrowRate();
+        uint256 currentBorrowRate = interestRateModel.getBorrowRatePerBlock();
 
         // Call Vault's adminBorrowFunction to withdraw funds to Market contract
         vaultContract.adminBorrowFunction(loanAmount);
@@ -257,21 +258,22 @@ contract Market {
         // Transfer the loaned amount from the market to the user
         loanAsset.transfer(msg.sender, loanAmount);
 
-        uint256 accruedInterest = borrowerInterestAccrued(msg.sender);
+        // Ensure index is up to date after a successful transfer
+        updateGlobalBorrowIndex();
 
+        // Adding new debt + any accrued interest
+        uint256 accruedInterest = borrowerInterestAccrued(msg.sender);
         if (userTotalDebt[msg.sender] == 0) {
             // First-time borrower: Initialize debt & timestamps
             userTotalDebt[msg.sender] = loanAmount;
-            lastDebt[msg.sender] = loanAmount;
         } else {
             // Existing borrower: Add accrued interest + new loan
             userTotalDebt[msg.sender] += loanAmount + accruedInterest;
-            lastDebt[msg.sender] = userTotalDebt[msg.sender]; // Update last debt after adding interest
         }
 
-        // Update last updated time and store borrow rate at this moment
-        lastUpdated[msg.sender] = block.timestamp;
-        lastBorrowRate[msg.sender] = currentBorrowRate; // Store the rate at time of borrowing
+        // Update last updated block per user
+        // It tracks when this specific borrower last took a loan
+        lastUpdatedBlock[msg.sender] = block.number;
 
         // Update the total borrows
         totalBorrows += loanAmount;
@@ -354,7 +356,7 @@ contract Market {
     function getUserTotalDebt(
         address user
     ) public view returns (uint256 totalDebt) {
-        totalDebt = userTotalDebt[user];
+        totalDebt = userTotalDebt[user] + borrowerInterestAccrued(user);
         return totalDebt;
     }
 
@@ -371,33 +373,38 @@ contract Market {
     function borrowerInterestAccrued(
         address borrower
     ) public view returns (uint256) {
-        uint256 lastUpdate = lastUpdated[borrower];
+        uint256 lastBlock = lastUpdatedBlock[borrower];
 
-        // If the borrower hasn't borrow yet, no interest has accrued
-        if (lastUpdate == 0) {
-            return 0;
-        }
+        if (lastBlock == 0) return 0; // No borrowing yet
 
-        uint256 currentTime = block.timestamp; // current time
-        uint256 timeElapsed = currentTime - lastUpdate;
+        uint256 previousIndex = globalBorrowIndex;
+        uint256 newIndex = previousIndex *
+            (1 +
+                interestRateModel.getBorrowRatePerBlock() *
+                (block.number - lastBlock));
 
-        // Fetch the borrow rate at the time of the last update
-        uint256 lastRate = borrowRateAtTime(borrower);
-
-        // Calculate the interest accrued over the elapsed time period
         uint256 interestAccrued = (userTotalDebt[borrower] *
-            lastRate *
-            timeElapsed) / (365 days * 100); // assume yearly rate
+            (newIndex - previousIndex)) / 1e18; // Adjusted for precision
 
         return interestAccrued;
     }
 
-    // Helper function to calculate thge borrow rate in effect at the borrower's last updated time
-    function borrowRateAtTime(address borrower) public view returns (uint256) {
-        if (lastUpdated[borrower] == 0) {
-            return interestRateModel.getDynamicBorrowRate(); // Default to current rate if no previous record
-        }
+    // Function to update the global borrow index
+    function updateGlobalBorrowIndex() public {
+        // Get the current borrow rate per block from the interest rate model
+        uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();
 
-        return lastBorrowRate[borrower]; // Return the stored rate at last update
+        // Update the global borrow index based on the time elapsed (in blocks)
+        uint256 blocksElapsed = block.number - lastGlobalUpdateBlock;
+
+        // Formula: newIndex = oldIndex * (1 + borrowRatePerBlock * blocksElapsed)
+        uint256 newGlobalBorrowIndex = globalBorrowIndex *
+            (1 + borrowRatePerBlock * blocksElapsed);
+
+        // Update the global borrow index
+        globalBorrowIndex = newGlobalBorrowIndex;
+
+        // Update the last block where the borrow index was updated
+        lastGlobalUpdateBlock = block.number;
     }
 }

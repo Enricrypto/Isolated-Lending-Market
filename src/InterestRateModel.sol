@@ -15,6 +15,8 @@ contract InterestRateModel {
     Vault public vaultContract;
     Market public marketContract; // Address of marketContract to fetch supply/borrow data
 
+    uint256 public constant BLOCKS_PER_YEAR = 2_102_400; // Approx. 12s block time
+
     event InterestRateUpdated(address indexed asset, uint256 rate);
 
     constructor(
@@ -70,7 +72,7 @@ contract InterestRateModel {
         reserveFactor = _newReserveFactor;
     }
 
-    // Fetch total supply from Market Contract
+    // Fetch total supply from Vault Contract
     function getTotalSupply() public view returns (uint256) {
         return
             vaultContract.convertToAssets(
@@ -99,13 +101,18 @@ contract InterestRateModel {
             // Below optimal utilization: use slope1
             return baseRate + (utilization * slope1) / 1e18;
         } else {
-            // Above optima utilization: use slope2 (steep increase)
+            // Above optimal utilization: use slope2 (steep increase)
             uint256 excessUtilization = utilization - optimalUtilization;
             return
                 baseRate +
                 ((optimalUtilization * slope1) / 1e18) +
                 ((excessUtilization * slope2) / 1e18);
         }
+    }
+
+    // Function to get borrow rate per block
+    function getBorrowRatePerBlock() public view returns (uint256) {
+        return getDynamicBorrowRate() / BLOCKS_PER_YEAR;
     }
 
     // Calculate lending rate: R_lending = R_borrow * U * (1 - reserveFactor)

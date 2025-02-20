@@ -17,7 +17,7 @@ contract Market {
     uint256 public totalBorrows;
 
     // Global borrow index
-    uint256 public globalBorrowIndex = 1e18; // Start with an initial index value
+    uint256 public globalBorrowIndex = 1e18; // Start with an initial index value, no interest has accrued yet.
 
     // Track the last block where the global borrow index was updated
     uint256 public lastGlobalUpdateBlock;
@@ -398,8 +398,8 @@ contract Market {
         uint256 blocksElapsed = block.number - lastGlobalUpdateBlock;
 
         // Formula: newIndex = oldIndex * (1 + borrowRatePerBlock * blocksElapsed)
-        uint256 newGlobalBorrowIndex = globalBorrowIndex *
-            (1 + borrowRatePerBlock * blocksElapsed);
+        uint256 newGlobalBorrowIndex = (globalBorrowIndex *
+            (1e18 + borrowRatePerBlock * blocksElapsed)) / 1e18;
 
         // Update the global borrow index
         globalBorrowIndex = newGlobalBorrowIndex;
@@ -415,8 +415,8 @@ contract Market {
         uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();
 
         // Estimate new global borrow index
-        uint256 newGlobalBorrowIndex = globalBorrowIndex *
-            (1 + borrowRatePerBlock * blocksElapsed);
+        uint256 newGlobalBorrowIndex = (globalBorrowIndex *
+            (1e18 + borrowRatePerBlock * blocksElapsed)) / 1e18;
 
         // Calculate the interest accrued since last update
         uint256 totalInterestAccrued = (totalBorrows *

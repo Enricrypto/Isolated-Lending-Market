@@ -252,6 +252,9 @@ contract Market {
         // Fetch the borrow rate at this moment
         uint256 currentBorrowRate = interestRateModel.getBorrowRatePerBlock();
 
+        // Calculate accrued interest before updating the borrow index
+        uint256 accruedInterest = borrowerInterestAccrued(msg.sender);
+
         // Call Vault's adminBorrowFunction to withdraw funds to Market contract
         vaultContract.adminBorrowFunction(loanAmount);
 
@@ -262,13 +265,12 @@ contract Market {
         updateGlobalBorrowIndex();
 
         // Adding new debt + any accrued interest
-        uint256 accruedInterest = borrowerInterestAccrued(msg.sender);
         if (userTotalDebt[msg.sender] == 0) {
-            // First-time borrower: Initialize debt & timestamps
+            // First-time borrower
             userTotalDebt[msg.sender] = loanAmount;
         } else {
-            // Existing borrower: Add accrued interest + new loan
-            userTotalDebt[msg.sender] += loanAmount + accruedInterest;
+            // Existing borrower: Add accrued interest up to now + new loan
+            userTotalDebt[msg.sender] += accruedInterest + loanAmount;
         }
 
         // Update last updated block per user
@@ -373,15 +375,16 @@ contract Market {
     function borrowerInterestAccrued(
         address borrower
     ) public view returns (uint256) {
+        uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();
         uint256 lastBlock = lastUpdatedBlock[borrower];
 
         if (lastBlock == 0) return 0; // No borrowing yet
 
+        uint256 blocksElapsed = block.number - lastBlock;
+
         uint256 previousIndex = globalBorrowIndex;
-        uint256 newIndex = previousIndex *
-            (1 +
-                interestRateModel.getBorrowRatePerBlock() *
-                (block.number - lastBlock));
+        uint256 newIndex = (previousIndex *
+            (1e18 + (borrowRatePerBlock * blocksElapsed) / 1e18)) / 1e18;
 
         uint256 interestAccrued = (userTotalDebt[borrower] *
             (newIndex - previousIndex)) / 1e18; // Adjusted for precision

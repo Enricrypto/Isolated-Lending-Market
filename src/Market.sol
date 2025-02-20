@@ -399,7 +399,7 @@ contract Market {
 
         // Formula: newIndex = oldIndex * (1 + borrowRatePerBlock * blocksElapsed)
         uint256 newGlobalBorrowIndex = (globalBorrowIndex *
-            (1e18 + borrowRatePerBlock * blocksElapsed)) / 1e18;
+            (1e18 + (borrowRatePerBlock * blocksElapsed) / 1e18)) / 1e18;
 
         // Update the global borrow index
         globalBorrowIndex = newGlobalBorrowIndex;
@@ -416,7 +416,7 @@ contract Market {
 
         // Estimate new global borrow index
         uint256 newGlobalBorrowIndex = (globalBorrowIndex *
-            (1e18 + borrowRatePerBlock * blocksElapsed)) / 1e18;
+            (1e18 + (borrowRatePerBlock * blocksElapsed) / 1e18)) / 1e18;
 
         // Calculate the interest accrued since last update
         uint256 totalInterestAccrued = (totalBorrows *

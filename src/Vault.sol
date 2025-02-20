@@ -69,10 +69,10 @@ contract Vault is ERC4626 {
     }
 
     function totalAssets() public view override returns (uint256) {
-        // Get the asset balance of the vault not including the lend assets
+        // Retrieves the idle (not lent) assets in the Vault.
         uint256 totalVaultAssets = convertToAssets(balanceOf(address(this)));
 
-        // Calculate the total borrowed amount plus interest for the borrowable token
+        // Adds the borrowed assets PLUS interest accrued.
         uint256 totalBorrowedPlusInterest = market.borrowedPlusInterest();
 
         // Return the total assets including borrowed amounts and interest

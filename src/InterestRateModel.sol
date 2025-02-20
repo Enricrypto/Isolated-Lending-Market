@@ -72,12 +72,18 @@ contract InterestRateModel {
         reserveFactor = _newReserveFactor;
     }
 
-    // Fetch total supply from Vault Contract
-    function getTotalSupply() public view returns (uint256) {
-        return
-            vaultContract.convertToAssets(
-                vaultContract.balanceOf(address(this))
-            );
+    // Function to calculate the total supply of the vault excluding interest
+    function getTotalSupplyWithoutInterest() public view returns (uint256) {
+        // Get total assets from the Vault contract
+        uint256 totalAssets = vaultContract.totalAssets(); // Includes both principal and interest
+
+        // Get total interest accrued from the Market contract
+        uint256 totalInterestAccrued = marketContract.getTotalInterestAccrued();
+
+        // Subtract interest from total assets to get the total supply excluding interest
+        uint256 totalSupplyWithoutInterest = totalAssets - totalInterestAccrued;
+
+        return totalSupplyWithoutInterest;
     }
 
     // Fetch total borrows from Market Contract
@@ -87,7 +93,7 @@ contract InterestRateModel {
 
     // Calculate utilization rate: U = totalBorrows / totalSupply
     function getUtilizationRate() public view returns (uint256) {
-        uint256 totalSupply = getTotalSupply();
+        uint256 totalSupply = getTotalSupplyWithoutInterest();
         uint256 totalBorrows = getTotalBorrows();
         if (totalSupply == 0) return 0;
         return (totalBorrows * 1e18) / totalSupply;

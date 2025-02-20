@@ -407,4 +407,27 @@ contract Market {
         // Update the last block where the borrow index was updated
         lastGlobalUpdateBlock = block.number;
     }
+
+    // Function to calculate the total interest accrued (excluding principal)
+    function getTotalInterestAccrued() public view returns (uint256) {
+        // Ensure the global borrow index is up to date
+        uint256 blocksElapsed = block.number - lastGlobalUpdateBlock;
+        uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();
+
+        // Estimate new global borrow index
+        uint256 newGlobalBorrowIndex = globalBorrowIndex *
+            (1 + borrowRatePerBlock * blocksElapsed);
+
+        // Calculate the interest accrued since last update
+        uint256 totalInterestAccrued = (totalBorrows *
+            (newGlobalBorrowIndex - globalBorrowIndex)) / 1e18;
+
+        return totalInterestAccrued;
+    }
+
+    // Function to calculate total borrows plus accrued interest
+    function borrowedPlusInterest() public view returns (uint256) {
+        uint256 totalInterestAccrued = getTotalInterestAccrued(); // Get the total interest accrued
+        return totalBorrows + totalInterestAccrued; // Add principal + interest
+    }
 }

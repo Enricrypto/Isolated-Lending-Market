@@ -2,11 +2,12 @@
 pragma solidity ^0.8.0;
 
 import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
+import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import "./Vault.sol";
 import "./PriceOracle.sol";
 import "./InterestRateModel.sol";
 
-contract Market {
+contract Market is ReentrancyGuard {
     address public owner; // Admin address
     Vault public vaultContract;
     PriceOracle public priceOracle;
@@ -183,7 +184,7 @@ contract Market {
     function depositCollateral(
         address collateralToken,
         uint256 amount
-    ) external {
+    ) external nonReentrant {
         // Ensure the collateral token is supported
         require(
             supportedCollateralTokens[collateralToken],
@@ -196,7 +197,12 @@ contract Market {
         require(amount > 0, "Deposit amount must be greater than zero");
 
         // Transfer the collateral token from the user to the contract
-        IERC20(collateralToken).transferFrom(msg.sender, address(this), amount);
+        bool success = IERC20(collateralToken).transferFrom(
+            msg.sender,
+            address(this),
+            amount
+        );
+        require(success, "Transfer failed");
 
         // Update user's collateral balance for this contract
         userCollateralBalances[msg.sender][collateralToken] += amount;
@@ -208,7 +214,7 @@ contract Market {
     function withdrawCollateral(
         address collateralToken,
         uint256 amount
-    ) external {
+    ) external nonReentrant {
         require(
             supportedCollateralTokens[collateralToken],
             "Collateral token not supported"
@@ -228,7 +234,8 @@ contract Market {
         );
 
         // Transfer the collateral back to the user
-        IERC20(collateralToken).transfer(msg.sender, amount);
+        bool success = IERC20(collateralToken).transfer(msg.sender, amount);
+        require(success, "Transfer failed");
 
         // Update user's collateral balance
         userCollateralBalances[msg.sender][collateralToken] -= amount;
@@ -237,7 +244,7 @@ contract Market {
     }
 
     // Function to borrow
-    function borrow(uint256 loanAmount) external {
+    function borrow(uint256 loanAmount) external nonReentrant {
         // Ensure the loan amount is valid
         require(loanAmount > 0, "Loan amount must be greater than zero");
 
@@ -376,10 +383,16 @@ contract Market {
         return totalDebt;
     }
 
-    // Helper function to calculate teh maximum borrowing power of a user
+    // Helper function to calculate the maximum borrowing power of a user
     function getMaxBorrowingPower(address user) public view returns (uint256) {
         uint256 borrowingPower = getUserTotalBorrowingPower(user);
         uint256 totalDebt = getUserTotalDebt(user);
+
+        // Ensure borrowing power is not negative
+        require(
+            borrowingPower >= totalDebt,
+            "Negative borrowing power detected"
+        );
 
         uint256 maxBorrowingPower = borrowingPower - totalDebt;
         return maxBorrowingPower;
@@ -412,7 +425,7 @@ contract Market {
     }
 
     // Function to update the global borrow index
-    function updateGlobalBorrowIndex() public {
+    function updateGlobalBorrowIndex() private {
         // Get the current borrow rate per block from the interest rate model
         uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();
 

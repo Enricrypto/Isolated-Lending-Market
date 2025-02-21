@@ -213,7 +213,7 @@ contract Market {
             supportedCollateralTokens[collateralToken],
             "Collateral token not supported"
         );
-        require(amount > 0, "Withdraw amlunt must be greater than zero");
+        require(amount > 0, "Withdraw amount must be greater than zero");
 
         // Ensure the user has enough balance to withdraw
         require(
@@ -240,6 +240,14 @@ contract Market {
     function borrow(uint256 loanAmount) external {
         // Ensure the loan amount is valid
         require(loanAmount > 0, "Loan amount must be greater than zero");
+
+        // Ensure the vault has enough liquidity to cover the loan amount
+        // No borrower can borrow more than what the vault can actually lend, preventing over-borrowing
+        uint256 availableLiquidity = vaultContract.totalLiquidity();
+        require(
+            loanAmount <= availableLiquidity,
+            "Vault has insufficient liquidity for this loan"
+        );
 
         uint256 availableBorrowingPower = getMaxBorrowingPower(msg.sender);
 

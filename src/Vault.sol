@@ -78,4 +78,9 @@ contract Vault is ERC4626 {
         // Return the total assets including borrowed amounts and interest
         return totalVaultAssets + totalBorrowedPlusInterest;
     }
+
+    function totalLiquidity() public view returns (uint256) {
+        // Convert the vault's balance to assets (liquidity available for borrowing)
+        return convertToAssets(balanceOf(address(this)));
+    }
 }

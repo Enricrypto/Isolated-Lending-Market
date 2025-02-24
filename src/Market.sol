@@ -267,10 +267,6 @@ contract Market is ReentrancyGuard {
         // Fetch the borrow rate at this moment
         uint256 currentBorrowRate = interestRateModel.getBorrowRatePerBlock();
 
-        // Calculate accrued interest before updating the borrow index
-        // Capture past interest before modifying the index.
-        uint256 accruedInterest = borrowerInterestAccrued(msg.sender);
-
         // Call Vault's adminBorrowFunction to withdraw funds to Market contract
         vaultContract.adminBorrowFunction(loanAmount);
 
@@ -280,13 +276,13 @@ contract Market is ReentrancyGuard {
         // Ensure index is up to date after a successful transfer
         updateGlobalBorrowIndex();
 
-        // Adding new debt + any accrued interest
+        // Adding new debt
         if (userTotalDebt[msg.sender] == 0) {
             // First-time borrower
             userTotalDebt[msg.sender] = loanAmount;
         } else {
-            // Existing borrower: Add accrued interest up to now + new loan
-            userTotalDebt[msg.sender] += accruedInterest + loanAmount;
+            // Existing borrower: Add new loan, interest accerued already accounted for afrter calling getMaxBorrowingPower.
+            userTotalDebt[msg.sender] += loanAmount;
         }
 
         // Update last updated block per user

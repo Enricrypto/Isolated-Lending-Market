@@ -33,6 +33,9 @@ contract Market is ReentrancyGuard {
     mapping(address => mapping(address => uint256))
         public userCollateralBalances;
 
+    // Mapping to track the collateral tokens a user has deposited
+    mapping(address => address[]) public userCollateralAssets;
+
     // Mapping to track total debt of each user
     mapping(address => uint256) public userTotalDebt;
 
@@ -62,6 +65,11 @@ contract Market is ReentrancyGuard {
     );
     event LTVRatioSet(address indexed collateralToken, uint256 ltvRatio);
     event Borrow(address indexed user, uint256 loanAmount, uint256 borrowRate);
+    event Repay(
+        address indexed user,
+        uint256 amountRepaid,
+        uint256 collateralReturned
+    );
 
     constructor(
         address _vaultContract,
@@ -207,6 +215,11 @@ contract Market is ReentrancyGuard {
         // Update user's collateral balance for this contract
         userCollateralBalances[msg.sender][collateralToken] += amount;
 
+        // If it's the first time depositing this token, add it to the user's collateral list
+        if (userCollateralbalances[msg.sender][collateralToken] == amount) {
+            userCollateralAssets[msg.sender].push(collateralToken);
+        }
+
         // Emit an event for the deposit
         emit CollateralDeposited(msg.sender, collateralToken, amount);
     }
@@ -239,6 +252,11 @@ contract Market is ReentrancyGuard {
 
         // Update user's collateral balance
         userCollateralBalances[msg.sender][collateralToken] -= amount;
+
+        // If user has no more of this collateral, remove it from the collateral assets list
+        if (userCollateralBlances[msg.sender][collateralToken] == 0) {
+            _removeCollateralAsset(msg.sender, collateralToken);
+        }
 
         emit CollateralWithdrawn(msg.sender, collateralToken, amount);
     }
@@ -293,6 +311,76 @@ contract Market is ReentrancyGuard {
         totalBorrows += loanAmount;
 
         emit Borrow(msg.sender, loanAmount, currentBorrowRate);
+    }
+
+    function repay(uint256 repaymentAmount) external nonReentrant {
+        // Ensure the repayment amount is valid
+        require(
+            repaymentAmount > 0,
+            "Repayment amount must be greater than zero"
+        );
+        uint256 userDebt = getUserTotalDebt(msg.sender);
+        require(userDebt > 0, "No outstanding debt to repay");
+
+        // Ensure user is not repaying more than what they owe
+        uint256 actualRepayment = repaymentAmount > userDebt
+            ? userDebt
+            : repaymentAmount;
+
+        // Transfer tokens from the borrower to the market contract
+        loanAsset.transferFrom(msg.sender, address(this), actualRepayment);
+
+        // Call Vault's adminRepayFunction to return funds to the Vault
+        vaultContract.adminRepayFunction(actualRepayment);
+
+        // Calculate the proportion of debt repayment
+        uint256 repaymentRatio = (actualRepayment * 1e18) / userDebt;
+
+        // Get all user's collateral assets
+        address[] memory userCollateralTokens = userCollateralAssets[user];
+
+        uint256 totalCollateralReturned = 0; // Track total collateral returned
+
+        for (uint256 i = 0; i < userCollateralTokens.length; i++) {
+            address collateralToken = userCollateralTokens[i];
+            uint256 userCollateral = userCollateralBalances[user][
+                collateralToken
+            ];
+
+            if (userCollateral > 0) {
+                // Calculate the collateral amount to return based on repayment ratio
+                uint256 collateralToReturn = (userCollateral * repaymentRatio) /
+                    1e18;
+
+                // Transfer collateral back to the user
+                if (collateralToReturn > 0) {
+                    IERC20(collateralToken).transfer(
+                        msg.sender,
+                        collateralToReturn
+                    );
+                    // Update user's collateral balance (reduce collateral balance)
+                    userCollateralBalances[msg.sender][
+                        collateralToken
+                    ] -= collateralToReturn;
+
+                    // Track total collateral returned
+                    totalCollateralReturned += collateralToReturn;
+                }
+            }
+        }
+        // Updates the borrower’s debt
+        userTotalDebt[msg.sender] -= actualRepayment;
+
+        // If fully paid, reset last updated block
+        if (userTotalDebt[msg.sender] == 0) {
+            lastUpdatedBlock[msg.sender] = 0;
+        } else {
+            lastUpdatedBlock[msg.sender] = block.number;
+        }
+
+        // Update total borrows in the system
+        totalBorrows -= actualRepayment;
+        emit Repay(msg.sender, actualRepayment, totalCollateralReturned);
     }
 
     // ======= HELPER FUNCTIONS ========
@@ -460,5 +548,23 @@ contract Market is ReentrancyGuard {
     function borrowedPlusInterest() public view returns (uint256) {
         uint256 totalInterestAccrued = getTotalInterestAccrued(); // Get the total interest accrued
         return totalBorrows + totalInterestAccrued; // Add principal + interest
+    }
+
+    // function to remove an asset from userCollateralAssets[msg.sender]
+    function _removeCollateralAsset(
+        address user,
+        address collateralToken
+    ) internal {
+        uint256 length = userCollateralAssets[user].length;
+        for (uint256 i = 0; i < length; i++) {
+            if (userCollateralAssets[user][i] == collateralToken) {
+                // Swap with last element and pop to avoid gaps
+                userCollateralAssets[user][i] = userCollateralAssets[user][
+                    length - 1
+                ];
+                userCollateralAssets[user].pop();
+                break;
+            }
+        }
     }
 }

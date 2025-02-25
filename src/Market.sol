@@ -170,6 +170,14 @@ contract Market is ReentrancyGuard {
         );
 
         // TO-DO: before removing collateral token, I'll need to make sure that no users are using token as collateral
+        // Check if any collateral of this token is still locked in the contract
+        uint256 totalCollateralInContract = _getTotalCollateralLocked(
+            collateralToken
+        );
+        require(
+            totalCollateralInContract == 0,
+            "Collateral still in use by the system"
+        );
 
         supportedCollateralTokens[collateralToken] = false;
         delete ltvRatios[collateralToken]; // Remove its LTV entry

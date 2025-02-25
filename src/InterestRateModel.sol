@@ -9,7 +9,6 @@ contract InterestRateModel {
     uint256 public optimalUtilization; // Optimal utilization threshold (e.g.: 80%)
     uint256 public slope1; // Slope before reaching optimal utilization
     uint256 public slope2; // Slope after reaching optimal utilization
-    uint256 public reserveFactor; // Percentage of interest reserved for protocol
 
     address public owner;
     Vault public vaultContract;
@@ -32,7 +31,6 @@ contract InterestRateModel {
         optimalUtilization = _optimalUtilization;
         slope1 = _slope1;
         slope2 = _slope2;
-        reserveFactor = _reserveFactor;
         vaultContract = Vault(_vaultContract);
         marketContract = Market(_marketContract);
         owner = msg.sender;
@@ -66,10 +64,6 @@ contract InterestRateModel {
 
     function setSlope2(uint256 _newSlope2) external onlyOwner {
         slope2 = _newSlope2;
-    }
-
-    function setReserveFactor(uint256 _newReserveFactor) external onlyOwner {
-        reserveFactor = _newReserveFactor;
     }
 
     // Function to calculate the total supply of the vault excluding interest

@@ -73,7 +73,7 @@ contract Vault is ERC4626 {
         uint256 totalVaultAssets = convertToAssets(balanceOf(address(this)));
 
         // Adds the borrowed assets PLUS interest accrued.
-        uint256 totalBorrowedPlusInterest = market.borrowedPlusInterest();
+        uint256 totalBorrowedPlusInterest = market._borrowedPlusInterest();
 
         // Return the total assets including borrowed amounts and interest
         return totalVaultAssets + totalBorrowedPlusInterest;

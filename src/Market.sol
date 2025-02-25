@@ -165,7 +165,7 @@ contract Market is ReentrancyGuard {
         );
         require(depositsPaused[collateralToken], "Must pause deposits first");
         require(
-            getTotalCollateralLocked(collateralToken) == 0,
+            _getTotalCollateralLocked(collateralToken) == 0,
             "Collateral still in use"
         );
 
@@ -242,7 +242,7 @@ contract Market is ReentrancyGuard {
 
         // Ensure user is not undercollateralized after withdrawal
         require(
-            isWithdrawalAllowed(msg.sender, collateralToken, amount),
+            _isWithdrawalAllowed(msg.sender, collateralToken, amount),
             "Withdrawal would cause undercollateralization"
         );
 
@@ -274,7 +274,7 @@ contract Market is ReentrancyGuard {
             "Vault has insufficient liquidity for this loan"
         );
 
-        uint256 availableBorrowingPower = getMaxBorrowingPower(msg.sender);
+        uint256 availableBorrowingPower = _getMaxBorrowingPower(msg.sender);
 
         // Ensure user has enough borrowing power to take this loan
         require(
@@ -292,14 +292,14 @@ contract Market is ReentrancyGuard {
         loanAsset.transfer(msg.sender, loanAmount);
 
         // Ensure index is up to date after a successful transfer
-        updateGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
 
         // Adding new debt
         if (userTotalDebt[msg.sender] == 0) {
             // First-time borrower
             userTotalDebt[msg.sender] = loanAmount;
         } else {
-            // Existing borrower: Add new loan, interest accerued already accounted for afrter calling getMaxBorrowingPower.
+            // Existing borrower: Add new loan, interest accerued already accounted for afrter calling _getMaxBorrowingPower.
             userTotalDebt[msg.sender] += loanAmount;
         }
 
@@ -319,7 +319,7 @@ contract Market is ReentrancyGuard {
             repaymentAmount > 0,
             "Repayment amount must be greater than zero"
         );
-        uint256 userDebt = getUserTotalDebt(msg.sender);
+        uint256 userDebt = _getUserTotalDebt(msg.sender);
         require(userDebt > 0, "No outstanding debt to repay");
 
         // Ensure user is not repaying more than what they owe
@@ -384,15 +384,16 @@ contract Market is ReentrancyGuard {
     }
 
     // ======= HELPER FUNCTIONS ========
+
     // Helper function to check total collateral locked in the contract
-    function getTotalCollateralLocked(
+    function _getTotalCollateralLocked(
         address collateralToken
     ) public view returns (uint256 totalCollateral) {
         totalCollateral = IERC20(collateralToken).balanceOf(address(this)); // Get the contract's balance
     }
 
     // Helper function to calculate total borrowable value of a user's collateral
-    function getUserTotalBorrowingPower(
+    function _getUserTotalBorrowingPower(
         address user
     ) public view returns (uint256 totalBorrowingPower) {
         totalBorrowingPower = 0;
@@ -416,7 +417,7 @@ contract Market is ReentrancyGuard {
     }
 
     // Helper function to ensure that withdrawing collateral does not leave the user undercollateralized.
-    function isWithdrawalAllowed(
+    function _isWithdrawalAllowed(
         address user,
         address collateralToken,
         uint256 amount
@@ -431,10 +432,10 @@ contract Market is ReentrancyGuard {
         );
 
         // Get the user's current borrowing power
-        uint256 totalBorrowingPower = getUserTotalBorrowingPower(user);
+        uint256 totalBorrowingPower = _getUserTotalBorrowingPower(user);
 
         // Get user's total outstanding debt
-        uint256 totalDebt = getUserTotalDebt(user);
+        uint256 totalDebt = _getUserTotalDebt(user);
 
         // Get the LTV and price of collateral token
         uint256 ltv = ltvRatios[collateralToken];
@@ -455,22 +456,22 @@ contract Market is ReentrancyGuard {
     }
 
     // Helper function to calculate the total debt for a user
-    function getUserTotalDebt(
+    function _getUserTotalDebt(
         address user
     ) public view returns (uint256 totalDebt) {
         // Ensure global borrow index is updated before fetching user debt
         // Ensure interest is calculated using the latest index.
-        updateGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
 
         // Now the interest is calculated using the latest globalBorrowIndex, ensuring no interest is skipped.
-        totalDebt = userTotalDebt[user] + borrowerInterestAccrued(user);
+        totalDebt = userTotalDebt[user] + _borrowerInterestAccrued(user);
         return totalDebt;
     }
 
     // Helper function to calculate the maximum borrowing power of a user
-    function getMaxBorrowingPower(address user) public view returns (uint256) {
-        uint256 borrowingPower = getUserTotalBorrowingPower(user);
-        uint256 totalDebt = getUserTotalDebt(user);
+    function _getMaxBorrowingPower(address user) public view returns (uint256) {
+        uint256 borrowingPower = _getUserTotalBorrowingPower(user);
+        uint256 totalDebt = _getUserTotalDebt(user);
 
         // Ensure borrowing power is not negative
         require(
@@ -483,7 +484,7 @@ contract Market is ReentrancyGuard {
     }
 
     // Helper function to calculate accrued interest on a debt considering dynamic rates
-    function borrowerInterestAccrued(
+    function _borrowerInterestAccrued(
         address borrower
     ) public view returns (uint256) {
         // This gives us the current interest rate per block.
@@ -509,7 +510,7 @@ contract Market is ReentrancyGuard {
     }
 
     // Function to update the global borrow index
-    function updateGlobalBorrowIndex() private {
+    function _updateGlobalBorrowIndex() private {
         // Get the current borrow rate per block from the interest rate model
         uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();
 
@@ -528,7 +529,7 @@ contract Market is ReentrancyGuard {
     }
 
     // Function to calculate the total interest accrued (excluding principal)
-    function getTotalInterestAccrued() public view returns (uint256) {
+    function _getTotalInterestAccrued() public view returns (uint256) {
         // Ensure the global borrow index is up to date
         uint256 blocksElapsed = block.number - lastGlobalUpdateBlock;
         uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();
@@ -545,8 +546,8 @@ contract Market is ReentrancyGuard {
     }
 
     // Function to calculate total borrows plus accrued interest
-    function borrowedPlusInterest() public view returns (uint256) {
-        uint256 totalInterestAccrued = getTotalInterestAccrued(); // Get the total interest accrued
+    function _borrowedPlusInterest() public view returns (uint256) {
+        uint256 totalInterestAccrued = _getTotalInterestAccrued(); // Get the total interest accrued
         return totalBorrows + totalInterestAccrued; // Add principal + interest
     }
 

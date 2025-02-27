@@ -38,7 +38,7 @@ contract Vault is ERC4626 {
         address receiver
     ) public override returns (uint256 shares) {
         require(amount > 0, " Deposit amount must be greater than 0");
-        shares = _deposit(amount, receiver);
+        shares = super.deposit(amount, receiver);
         return shares;
     }
 
@@ -47,22 +47,30 @@ contract Vault is ERC4626 {
         address receiver,
         address owner
     ) public override returns (uint256 shares) {
-        shares = _withdraw(amount, receiver, owner);
+        shares = super.withdraw(amount, receiver, owner);
         return shares;
     }
 
     // Admin function to borrow tokens, only callable by the market contract
     function adminBorrowFunction(uint256 amount) external onlyMarket {
+        IERC20 token = IERC20(asset());
+        require(address(token) != address(0), "Asset token is not set");
+
         // Transfer tokens directly from vault to market (without burning shares)
-        asset().transfer(msg.sender, amount);
+        bool success = token.transfer(msg.sender, amount);
+        require(success, "Token transfer failed");
+        // // Transfer tokens directly from vault to market (without burning shares)
+        // asset().transfer(msg.sender, amount);
 
         emit BorrowedByMarket(msg.sender, amount);
     }
 
     // Admin function to repay tokens back to the vault, only callable by the market contract
     function adminRepayFunction(uint256 amount) external onlyMarket {
+        IERC20 token = IERC20(asset());
+        require(address(token) != address(0), "Asset token is not set");
         // Transfer tokens from market to vault (without burning shares)
-        asset().transferFrom(msg.sender, address(this), amount);
+        token.transferFrom(msg.sender, address(this), amount);
 
         // Emit an event for the repayment action
         emit RepaidToVault(msg.sender, amount);
@@ -70,7 +78,7 @@ contract Vault is ERC4626 {
 
     function totalAssets() public view override returns (uint256) {
         // Retrieves the idle (not lent) assets in the Vault.
-        uint256 totalVaultAssets = convertToAssets(balanceOf(address(this)));
+        // uint256 totalVaultAssets = convertToAssets(balanceOf(address(this)));
 
         // Adds the borrowed assets PLUS interest accrued.
         uint256 totalBorrowedPlusInterest = market._borrowedPlusInterest();

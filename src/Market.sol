@@ -81,7 +81,7 @@ contract Market is ReentrancyGuard {
         vaultContract = Vault(_vaultContract);
         priceOracle = PriceOracle(_priceOracle);
         interestRateModel = InterestRateModel(_interestRateModel);
-        loanAsset = _loanAsset;
+        loanAsset = IERC20(_loanAsset);
     }
 
     modifier onlyAdmin() {
@@ -124,7 +124,7 @@ contract Market is ReentrancyGuard {
         collateralTokenList.push(collateralToken); // Track the token
 
         // Set LTV ratio using the existing function
-        setLTVRatio(collateralToken, ltv);
+        this.setLTVRatio(collateralToken, ltv);
 
         emit CollateralTokenAdded(collateralToken, ltv);
     }
@@ -224,7 +224,7 @@ contract Market is ReentrancyGuard {
         userCollateralBalances[msg.sender][collateralToken] += amount;
 
         // If it's the first time depositing this token, add it to the user's collateral list
-        if (userCollateralbalances[msg.sender][collateralToken] == amount) {
+        if (userCollateralBalances[msg.sender][collateralToken] == amount) {
             userCollateralAssets[msg.sender].push(collateralToken);
         }
 
@@ -262,7 +262,7 @@ contract Market is ReentrancyGuard {
         userCollateralBalances[msg.sender][collateralToken] -= amount;
 
         // If user has no more of this collateral, remove it from the collateral assets list
-        if (userCollateralBlances[msg.sender][collateralToken] == 0) {
+        if (userCollateralBalances[msg.sender][collateralToken] == 0) {
             _removeCollateralAsset(msg.sender, collateralToken);
         }
 
@@ -274,6 +274,9 @@ contract Market is ReentrancyGuard {
         // Ensure the loan amount is valid
         require(loanAmount > 0, "Loan amount must be greater than zero");
 
+        // Make sure the global borrow index reflects the latest state of the interest rate before any borrowing occurs
+        _updateGlobalBorrowIndex();
+
         // Ensure the vault has enough liquidity to cover the loan amount
         // No borrower can borrow more than what the vault can actually lend, preventing over-borrowing
         uint256 availableLiquidity = vaultContract.totalLiquidity();
@@ -282,6 +285,8 @@ contract Market is ReentrancyGuard {
             "Vault has insufficient liquidity for this loan"
         );
 
+        // Calculates the maximum borrowing power by calling _getMaxBorrowingPower(), which internally calls
+        // _getUserTotalDebt() and computes the total debt, including interest accrued, by calling _borrowerInterestAccrued()
         uint256 availableBorrowingPower = _getMaxBorrowingPower(msg.sender);
 
         // Ensure user has enough borrowing power to take this loan
@@ -299,15 +304,12 @@ contract Market is ReentrancyGuard {
         // Transfer the loaned amount from the market to the user
         loanAsset.transfer(msg.sender, loanAmount);
 
-        // Ensure index is up to date after a successful transfer
-        _updateGlobalBorrowIndex();
-
         // Adding new debt
         if (userTotalDebt[msg.sender] == 0) {
             // First-time borrower
             userTotalDebt[msg.sender] = loanAmount;
         } else {
-            // Existing borrower: Add new loan, interest accerued already accounted for afrter calling _getMaxBorrowingPower.
+            // Existing borrower: Add new loan + interest accrued
             userTotalDebt[msg.sender] += loanAmount;
         }
 
@@ -327,6 +329,11 @@ contract Market is ReentrancyGuard {
             repaymentAmount > 0,
             "Repayment amount must be greater than zero"
         );
+
+        // Ensure index is up to date before calculating anything related to the user's debt
+        _updateGlobalBorrowIndex();
+
+        // User's debt is calculated including interests accrued with updated global borrow index
         uint256 userDebt = _getUserTotalDebt(msg.sender);
         require(userDebt > 0, "No outstanding debt to repay");
 
@@ -345,13 +352,15 @@ contract Market is ReentrancyGuard {
         uint256 repaymentRatio = (actualRepayment * 1e18) / userDebt;
 
         // Get all user's collateral assets
-        address[] memory userCollateralTokens = userCollateralAssets[user];
+        address[] memory userCollateralTokens = userCollateralAssets[
+            msg.sender
+        ];
 
         uint256 totalCollateralReturned = 0; // Track total collateral returned
 
         for (uint256 i = 0; i < userCollateralTokens.length; i++) {
             address collateralToken = userCollateralTokens[i];
-            uint256 userCollateral = userCollateralBalances[user][
+            uint256 userCollateral = userCollateralBalances[msg.sender][
                 collateralToken
             ];
 
@@ -429,7 +438,7 @@ contract Market is ReentrancyGuard {
         address user,
         address collateralToken,
         uint256 amount
-    ) public view returns (bool) {
+    ) internal returns (bool) {
         require(
             supportedCollateralTokens[collateralToken],
             "Token not supported"
@@ -438,6 +447,9 @@ contract Market is ReentrancyGuard {
             userCollateralBalances[user][collateralToken] >= amount,
             "Insufficient balance"
         );
+
+        // Update global borrow index to ensure interest rates are up-to-date
+        _updateGlobalBorrowIndex();
 
         // Get the user's current borrowing power
         uint256 totalBorrowingPower = _getUserTotalBorrowingPower(user);
@@ -467,17 +479,23 @@ contract Market is ReentrancyGuard {
     function _getUserTotalDebt(
         address user
     ) public view returns (uint256 totalDebt) {
-        // Ensure global borrow index is updated before fetching user debt
-        // Ensure interest is calculated using the latest index.
-        _updateGlobalBorrowIndex();
+        // Fetch the user's total debt (principal)
+        uint256 principalDebt = userTotalDebt[user];
 
-        // Now the interest is calculated using the latest globalBorrowIndex, ensuring no interest is skipped.
-        totalDebt = userTotalDebt[user] + _borrowerInterestAccrued(user);
+        // Fetch the accrued interest using the borrower's interest calculation function
+        uint256 interestAccrued = _borrowerInterestAccrued(user);
+
+        // Total debt is the sum of the principal debt and accrued interest
+        totalDebt = principalDebt + interestAccrued;
+
         return totalDebt;
     }
 
     // Helper function to calculate the maximum borrowing power of a user
-    function _getMaxBorrowingPower(address user) public view returns (uint256) {
+    function _getMaxBorrowingPower(address user) internal returns (uint256) {
+        // Update the global borrow index to ensure the interest rates are up to date
+        _updateGlobalBorrowIndex();
+
         uint256 borrowingPower = _getUserTotalBorrowingPower(user);
         uint256 totalDebt = _getUserTotalDebt(user);
 
@@ -537,7 +555,7 @@ contract Market is ReentrancyGuard {
     }
 
     // Function to calculate the total interest accrued (excluding principal)
-    function _getTotalInterestAccrued() public view returns (uint256) {
+    function _getTotalInterestAccrued() internal returns (uint256) {
         // Ensure the global borrow index is up to date
         uint256 blocksElapsed = block.number - lastGlobalUpdateBlock;
         uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();
@@ -546,7 +564,7 @@ contract Market is ReentrancyGuard {
         uint256 newGlobalBorrowIndex = (globalBorrowIndex *
             (1e18 + (borrowRatePerBlock * blocksElapsed) / 1e18)) / 1e18;
 
-        // Calculate the interest accrued since last update
+        // Calculate the interest accrued since last update, considering total borrows
         uint256 totalInterestAccrued = (totalBorrows *
             (newGlobalBorrowIndex - globalBorrowIndex)) / 1e18;
 
@@ -559,7 +577,7 @@ contract Market is ReentrancyGuard {
         return totalBorrows + totalInterestAccrued; // Add principal + interest
     }
 
-    // function to remove an asset from userCollateralAssets[msg.sender]
+    // Function to remove an asset from userCollateralAssets[msg.sender]
     function _removeCollateralAsset(
         address user,
         address collateralToken

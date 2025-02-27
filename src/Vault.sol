@@ -59,8 +59,6 @@ contract Vault is ERC4626 {
         // Transfer tokens directly from vault to market (without burning shares)
         bool success = token.transfer(msg.sender, amount);
         require(success, "Token transfer failed");
-        // // Transfer tokens directly from vault to market (without burning shares)
-        // asset().transfer(msg.sender, amount);
 
         emit BorrowedByMarket(msg.sender, amount);
     }
@@ -78,7 +76,7 @@ contract Vault is ERC4626 {
 
     function totalAssets() public view override returns (uint256) {
         // Retrieves the idle (not lent) assets in the Vault.
-        // uint256 totalVaultAssets = convertToAssets(balanceOf(address(this)));
+        uint256 totalVaultAssets = _asset.balanceOf(address(this));
 
         // Adds the borrowed assets PLUS interest accrued.
         uint256 totalBorrowedPlusInterest = market._borrowedPlusInterest();

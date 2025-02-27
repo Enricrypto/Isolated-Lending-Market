@@ -555,7 +555,7 @@ contract Market is ReentrancyGuard {
     }
 
     // Function to calculate the total interest accrued (excluding principal)
-    function _getTotalInterestAccrued() internal returns (uint256) {
+    function _getTotalInterestAccrued() internal view returns (uint256) {
         // Ensure the global borrow index is up to date
         uint256 blocksElapsed = block.number - lastGlobalUpdateBlock;
         uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();

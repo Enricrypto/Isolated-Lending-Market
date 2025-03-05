@@ -4,11 +4,16 @@ pragma solidity ^0.8.0;
 import "lib/forge-std/src/Test.sol";
 import "lib/forge-std/src/console.sol";
 import "../src/Vault.sol";
+import "../src/Market.sol";
+import "../src/PriceOracle.sol";
+import "../src/InterestRateModel.sol";
 import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 
 contract VaultTest is Test {
     Vault public vault;
     Market public market;
+    PriceOracle public priceOracle;
+    InterestRateModel public interestRateModel;
     address public user;
     IERC20 public dai; // testing with DAI as the loan asset
 
@@ -21,17 +26,38 @@ contract VaultTest is Test {
         // Fork the Arbitrum mainnet at the latest block
         vm.createSelectFork(
             "https://arb-mainnet.g.alchemy.com/v2/ADLPIIv6SUjhmaoJYxWLHKDUDaw8RnRj",
-            301134183
+            312132545
         );
 
         // Initialize the DAI instance
         dai = IERC20(daiAddress);
 
-        // // Deploy market contract
-        // market = new Market();
+        // InterestRateModel parameters
+        uint256 baseRate = 0.02e18; // 2% base rate
+        uint256 optimalUtilization = 0.8e18; // 80% optimal utilization
+        uint256 slope1 = 0.1e18; // 10% slope1
+        uint256 slope2 = 0.5e18; // 50% slope2
 
-        // Deploy Vault contract
+        // Deploy contracts
+        priceOracle = new PriceOracle();
+
         vault = new Vault(dai, address(market), "Vault Dai", "VDAI");
+
+        interestRateModel = new InterestRateModel(
+            baseRate,
+            optimalUtilization,
+            slope1,
+            slope2,
+            address(vault), // Vault contract address
+            address(market) // Market contract address
+        );
+
+        market = new Market(
+            address(vault),
+            address(priceOracle),
+            address(interestRateModel),
+            address(dai)
+        );
 
         // Set up account
         user = address(0x123);
@@ -94,71 +120,4 @@ contract VaultTest is Test {
             "User shares should increase after deposit"
         );
     }
-
-    //     function testWithdraw() public {
-    //         uint256 withdrawAmount = 500 * 1e18; // Withdraw 500 tokens
-    //         uint256 depositAmount = initialDeposit;
-
-    //         // User deposits DAI into the vault
-    //         vm.prank(user);
-    //         vault.deposit(depositAmount, user);
-
-    //         // Log initial vault token (shares) balance
-    //         uint256 initialShares = vault.balanceOf(user);
-    //         console.log("Initial shares balance:", initialShares);
-
-    //         // Log initial receiver balance
-    //         uint256 initialReceiverBalance = dai.balanceOf(receiver);
-    //         console.log("Initial receiver balance:", initialReceiverBalance);
-
-    //         // Log initial vault collateral (total assets)
-    //         uint256 initialVaultBalance = vault.totalAssets();
-    //         console.log("Initial vault balance:", initialVaultBalance);
-
-    //         // Perform withdrawal
-    //         vm.startPrank(user);
-    //         uint256 sharesBurned = vault.withdraw(withdrawAmount, receiver, user);
-    //         vm.stopPrank();
-
-    //         // Log final vault token (shares) balance
-    //         uint256 finalShares = vault.balanceOf(user);
-    //         console.log("Final shares balance:", finalShares);
-
-    //         // Log final receiver balance
-    //         uint256 finalReceiverBalance = dai.balanceOf(receiver);
-    //         console.log("Final receiver balance:", finalReceiverBalance);
-
-    //         // Log final vault collateral (total assets)
-    //         uint256 finalVaultBalance = vault.totalAssets();
-    //         console.log("Final vault balance:", finalVaultBalance);
-
-    //         // Assert shares were burned
-    //         uint256 expectedSharesBurned = vault.previewWithdraw(withdrawAmount);
-    //         assertEq(
-    //             sharesBurned,
-    //             expectedSharesBurned,
-    //             "Shares burned should match the expected shares"
-    //         );
-
-    //         // Assert receiver's balance increased correctly
-    //         assertEq(
-    //             finalReceiverBalance,
-    //             initialReceiverBalance + withdrawAmount,
-    //             "Receiver balance should increase by the withdrawn amount"
-    //         );
-
-    //         // Assert user's shares balance decreased
-    //         assertEq(
-    //             finalShares,
-    //             initialShares - sharesBurned,
-    //             "User's shares balance should decrease by the burned shares"
-    //         );
-
-    //         // Assert vault's total assets decreased
-    //         assertEq(
-    //             finalVaultBalance,
-    //             initialVaultBalance - withdrawAmount,
-    //             "Vault's total assets should decrease by the withdrawn amount"
-    //         );
-    //     }
 }

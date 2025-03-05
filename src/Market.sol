@@ -18,7 +18,7 @@ contract Market is ReentrancyGuard {
     uint256 public totalBorrows;
 
     // Global borrow index
-    uint256 public globalBorrowIndex = 1e18; // Start with an initial index value, no interest has accrued yet.
+    uint256 public globalBorrowIndex; // Start with an initial index value, no interest has accrued yet.
 
     // Track the last block where the global borrow index was updated
     uint256 public lastGlobalUpdateBlock;
@@ -82,6 +82,9 @@ contract Market is ReentrancyGuard {
         priceOracle = PriceOracle(_priceOracle);
         interestRateModel = InterestRateModel(_interestRateModel);
         loanAsset = IERC20(_loanAsset);
+        totalBorrows = 0;
+        globalBorrowIndex = 1e18; // Set starting index value
+        lastGlobalUpdateBlock = block.number;
     }
 
     modifier onlyAdmin() {
@@ -299,7 +302,7 @@ contract Market is ReentrancyGuard {
         uint256 currentBorrowRate = interestRateModel.getBorrowRatePerBlock();
 
         // Call Vault's adminBorrowFunction to withdraw funds to Market contract
-        vaultContract.adminBorrowFunction(loanAmount);
+        vaultContract.adminBorrow(loanAmount);
 
         // Transfer the loaned amount from the market to the user
         loanAsset.transfer(msg.sender, loanAmount);
@@ -346,7 +349,7 @@ contract Market is ReentrancyGuard {
         loanAsset.transferFrom(msg.sender, address(this), actualRepayment);
 
         // Call Vault's adminRepayFunction to return funds to the Vault
-        vaultContract.adminRepayFunction(actualRepayment);
+        vaultContract.adminRepay(actualRepayment);
 
         // Calculate the proportion of debt repayment
         uint256 repaymentRatio = (actualRepayment * 1e18) / userDebt;
@@ -555,7 +558,7 @@ contract Market is ReentrancyGuard {
     }
 
     // Function to calculate the total interest accrued (excluding principal)
-    function _getTotalInterestAccrued() internal view returns (uint256) {
+    function _getTotalInterestAccrued() public view returns (uint256) {
         // Ensure the global borrow index is up to date
         uint256 blocksElapsed = block.number - lastGlobalUpdateBlock;
         uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();
@@ -573,8 +576,9 @@ contract Market is ReentrancyGuard {
 
     // Function to calculate total borrows plus accrued interest
     function _borrowedPlusInterest() public view returns (uint256) {
+        uint256 totalBorrowed = totalBorrows;
         uint256 totalInterestAccrued = _getTotalInterestAccrued(); // Get the total interest accrued
-        return totalBorrows + totalInterestAccrued; // Add principal + interest
+        return totalBorrowed > 0 ? totalBorrowed + totalInterestAccrued : 0; // Add principal + interest
     }
 
     // Function to remove an asset from userCollateralAssets[msg.sender]

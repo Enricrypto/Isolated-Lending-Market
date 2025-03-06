@@ -20,11 +20,11 @@ The protocol is modular, allowing new collateral types, borrowable tokens, and v
 # Core Contract Functions
 1. Vault Contract (ERC-4626)
 - deposit: Allows users to deposit tokens, minting vault shares.
-withdraw: Allows users to withdraw tokens, burning vault shares.
-totalAssets: Returns the total assets held in the vault.
-totalIdle: Retrieves the total idle assets.
-maxWithdraw: Calculates the maximum withdrawal amount for the user.
-maxRedeem: Retrieves the maximum redeemable shares for the user.
+- withdraw: Allows users to withdraw tokens, burning vault shares.
+- totalAssets: Returns the total assets held in the vault.
+- totalIdle: Retrieves the total idle assets.
+- maxWithdraw: Calculates the maximum withdrawal amount for the user.
+- maxRedeem: Retrieves the maximum redeemable shares for the user.
 
 2. Market Contract
 addCollateralToken: Adds a new collateral token type.

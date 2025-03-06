@@ -60,21 +60,22 @@ The protocol is modular, allowing new collateral types, borrowable tokens, and v
 # Future Enhancements
 Future modular enhancements include:
 
-*Oracle Module*: For dynamic price feeds of collateral and borrowed assets.
-*Interest Rate Module*: For calculating dynamic interest rates.
-*Factory Module*: For deploying new lending markets with customizable parameters.
-*Liquidation Module*: For managing liquidations in cases of under-collateralization.
+- Oracle Module: For dynamic price feeds of collateral and borrowed assets.
+- Interest Rate Module: For calculating dynamic interest rates.
+- Factory Module: For deploying new lending markets with customizable parameters.
+- Liquidation Module: For managing liquidations in cases of under-collateralization.
 
 # Smart Contract Architecture
 
 *Vault Contract (ERC-4626)*
-The Vault contract serves as the core for token management, enabling deposit/withdrawal operations while minting or burning vault shares to represent ownership.
+- The Vault contract serves as the core for token management, enabling deposit/withdrawal operations while minting or burning vault shares to represent ownership.
 
 *Market Contract*
+
 The Market contract is responsible for managing the lending and borrowing process:
-1. Deposit collateral and borrow against it.
-2. Lend assets via ERC-4626 vaults.
-3. Manage LTV ratios, borrowing power, and associated risk.
+- Deposit collateral and borrow against it.
+- Lend assets via ERC-4626 vaults.
+- Manage LTV ratios, borrowing power, and associated risk.
 
 By implementing separate, specialized contracts (Vault, Market, Pricing, Interest), the system ensures modularity and extensibility for future development.
 

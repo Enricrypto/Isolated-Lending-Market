@@ -55,7 +55,7 @@ The protocol is modular, allowing new collateral types, borrowable tokens, and v
 - getBorrowRatePerBlock: Calculates the borrow rate per block.
 
 *Interest Rate and Liquidation Management*
-The protocol implements dynamic interest rates using the Interest Contract and enables liquidation handling in cases of over-leveraging or default (future enhancement).
+- The protocol implements dynamic interest rates using the Interest Contract and enables liquidation handling in cases of over-leveraging or default (future enhancement).
 
 # Future Enhancements
 Future modular enhancements include:

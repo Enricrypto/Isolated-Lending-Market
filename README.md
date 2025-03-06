@@ -27,34 +27,34 @@ The protocol is modular, allowing new collateral types, borrowable tokens, and v
 - maxRedeem: Retrieves the maximum redeemable shares for the user.
 
 2. Market Contract
-addCollateralToken: Adds a new collateral token type.
-removeCollateralToken: Removes an existing collateral token type.
-depositCollateral: Deposits collateral for borrowing.
-withdrawCollateral: Withdraws collateral, maintaining the LTV ratio.
-borrow & repay: Allows users to borrow and repay tokens.
-set and get LTV ratio: Admin functions to set and retrieve LTV ratios for borrowable tokens.
-getTotalCollateralValue: Calculates the total value of a user's collateral.
-calculateBorrowerAccruedInterest: Tracks and calculates accrued interest for borrowers.
+- addCollateralToken: Adds a new collateral token type.
+- removeCollateralToken: Removes an existing collateral token type.
+- depositCollateral: Deposits collateral for borrowing.
+- withdrawCollateral: Withdraws collateral, maintaining the LTV ratio.
+- borrow & repay: Allows users to borrow and repay tokens.
+- set and get LTV ratio: Admin functions to set and retrieve LTV ratios for borrowable tokens.
+- getTotalCollateralValue: Calculates the total value of a user's collateral.
+- calculateBorrowerAccruedInterest: Tracks and calculates accrued interest for borrowers.
 
 3. Pricing Contract
-addPriceFeed: Adds a price feed for supported tokens.
-updatePriceFeed: Updates existing price feed values.
-removePriceFeed: Removes a price feed.
-getLatestPrice: Retrieves the latest price for a token.
+- addPriceFeed: Adds a price feed for supported tokens.
+- updatePriceFeed: Updates existing price feed values.
+- removePriceFeed: Removes a price feed.
+- getLatestPrice: Retrieves the latest price for a token.
 
 4. Interest Contract
-setMarketContract: Sets the associated Market contract.
-setBaseRate: Sets the base interest rate.
-setOptimalUtilization: Sets the optimal utilization ratio for calculating interest.
-setSlope1 & Slope2: Set the parameters for interest rate slope.
-setReserveFactor: Sets the reserve factor for the protocol.
-getTotalSupply: Retrieves the total supply in the market.
-getTotalBorrows: Retrieves the total borrowed amount in the market.
-getUtilizationRate: Gets the current utilization rate for the market.
-getDynamicBorrowRate: Retrieves the dynamic borrow rate based on utilization.
-getBorrowRatePerBlock: Calculates the borrow rate per block.
+- setMarketContract: Sets the associated Market contract.
+- setBaseRate: Sets the base interest rate.
+- setOptimalUtilization: Sets the optimal utilization ratio for calculating interest.
+- setSlope1 & Slope2: Set the parameters for interest rate slope.
+- setReserveFactor: Sets the reserve factor for the protocol.
+- getTotalSupply: Retrieves the total supply in the market.
+- getTotalBorrows: Retrieves the total borrowed amount in the market.
+- getUtilizationRate: Gets the current utilization rate for the market.
+- getDynamicBorrowRate: Retrieves the dynamic borrow rate based on utilization.
+- getBorrowRatePerBlock: Calculates the borrow rate per block.
 
-5. Interest Rate and Liquidation Management
+*Interest Rate and Liquidation Management*
 The protocol implements dynamic interest rates using the Interest Contract and enables liquidation handling in cases of over-leveraging or default (future enhancement).
 
 # Future Enhancements

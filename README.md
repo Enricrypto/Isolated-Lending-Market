@@ -65,7 +65,7 @@ Future modular enhancements include:
 *Factory Module*: For deploying new lending markets with customizable parameters.
 *Liquidation Module*: For managing liquidations in cases of under-collateralization.
 
-# Smart Contract Architecture*
+# Smart Contract Architecture
 
 *Vault Contract (ERC-4626)*
 The Vault contract serves as the core for token management, enabling deposit/withdrawal operations while minting or burning vault shares to represent ownership.

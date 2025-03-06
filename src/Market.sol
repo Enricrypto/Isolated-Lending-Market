@@ -204,6 +204,8 @@ contract Market is ReentrancyGuard {
         address collateralToken,
         uint256 amount
     ) external nonReentrant {
+        // Update borrow index before allowing any collateral-related changes
+        updateGlobalBorrowIndex();
         // Ensure the collateral token is supported
         require(
             supportedCollateralTokens[collateralToken],
@@ -239,6 +241,8 @@ contract Market is ReentrancyGuard {
         address collateralToken,
         uint256 amount
     ) external nonReentrant {
+        // Update borrow index before allowing any collateral-related changes
+        updateGlobalBorrowIndex();
         require(
             supportedCollateralTokens[collateralToken],
             "Collateral token not supported"
@@ -282,7 +286,7 @@ contract Market is ReentrancyGuard {
 
         // Ensure the vault has enough liquidity to cover the loan amount
         // No borrower can borrow more than what the vault can actually lend, preventing over-borrowing
-        uint256 availableLiquidity = vaultContract.totalLiquidity();
+        uint256 availableLiquidity = vaultContract.totalIdle();
         require(
             loanAmount <= availableLiquidity,
             "Vault has insufficient liquidity for this loan"

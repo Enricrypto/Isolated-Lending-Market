@@ -86,56 +86,27 @@ contract Vault is ERC4626, ReentrancyGuard {
 
     function totalAssets() public view override returns (uint256) {
         // Retrieves the idle (not lent) assets in the Vault.
-        uint256 idleAssets = totalLiquidity();
+        uint256 idleAssets = totalIdle();
 
-        // If there are no idle assets, just return zero to avoid division errors.
-        if (idleAssets == 0) {
-            return 0;
-        }
+        // // If there are no idle assets, just return zero to avoid division errors.
+        // if (idleAssets == 0) {
+        //     return 0;
+        // }
 
         // Adds the borrowed assets PLUS interest accrued.
         uint256 totalBorrowedPlusInterest = market._borrowedPlusInterest();
-        require(totalBorrowedPlusInterest >= 0, "Invalid borrowedPlusInterest");
 
         // Return the total assets including borrowed amounts and interest
         return idleAssets + totalBorrowedPlusInterest;
     }
 
-    function totalLiquidity() public view returns (uint256) {
+    function totalIdle() public view returns (uint256) {
         // Retrieves the idle (not lent) assets in the Vault.
-        uint256 idleAssets = IERC20(asset()).balanceOf(address(this));
-        return idleAssets;
-    }
-
-    function previewDeposit(
-        uint256 assets
-    ) public view override returns (uint256) {
-        uint256 total = totalAssets();
-
-        // If no assets in vault yet, assume assets == totalAssets to prevent division errors
-        if (total == 0) {
-            return assets; // 1 asset = 1 share on first deposit
-        }
-
-        return _convertToShares(assets, Math.Rounding.Floor);
-    }
-
-    function previewWithdraw(
-        uint256 assets
-    ) public view override returns (uint256) {
-        uint256 idleAssets = totalLiquidity(); // Only withdrawable assets
-        uint256 totalShares = totalSupply();
-
-        if (idleAssets == 0 || totalShares == 0) {
-            return 0; // No assets available, so no shares can be redeemed
-        }
-
-        // Convert assets to shares using idle assets only
-        return assets.mulDiv(totalShares, idleAssets, Math.Rounding.Ceil);
+        return IERC20(asset()).balanceOf(address(this));
     }
 
     function maxWithdraw(address owner) public view override returns (uint256) {
-        uint256 idleAssets = totalLiquidity(); // Only available assets in the vault
+        uint256 idleAssets = totalIdle(); // Only available assets in the vault
         if (idleAssets == 0) return 0; // no assets to withdraw
 
         uint256 userShares = balanceOf(owner); // User's shares
@@ -146,7 +117,7 @@ contract Vault is ERC4626, ReentrancyGuard {
 
     function maxRedeem(address owner) public view override returns (uint256) {
         uint256 sharesBalance = balanceOf(owner);
-        uint256 idleAssets = totalLiquidity();
+        uint256 idleAssets = totalIdle();
 
         if (idleAssets == 0) return 0; // No assets to redeem
 

@@ -77,7 +77,6 @@ contract Market is ReentrancyGuard {
         address _interestRateModel,
         address _loanAsset
     ) {
-        owner = msg.sender;
         vaultContract = Vault(_vaultContract);
         priceOracle = PriceOracle(_priceOracle);
         interestRateModel = InterestRateModel(_interestRateModel);
@@ -85,18 +84,19 @@ contract Market is ReentrancyGuard {
         totalBorrows = 0;
         globalBorrowIndex = 1e18; // Set starting index value
         lastGlobalUpdateBlock = block.number;
+        owner = msg.sender;
     }
 
-    modifier onlyAdmin() {
-        require(msg.sender == owner, "Only admin can execute this function");
+    modifier onlyOwner() {
+        require(
+            msg.sender == owner,
+            "Only contract owner can execute this function"
+        );
         _;
     }
 
     // Function to set the LTV ratio for a collateral token (only admin)
-    function setLTVRatio(
-        address collateralToken,
-        uint256 ltv
-    ) external onlyAdmin {
+    function setLTVRatio(address collateralToken, uint256 ltv) external {
         require(
             supportedCollateralTokens[collateralToken],
             "Token not supported"
@@ -111,8 +111,9 @@ contract Market is ReentrancyGuard {
     // Function to add a collateral token to the market
     function addCollateralToken(
         address collateralToken,
+        address priceFeed,
         uint256 ltv
-    ) external onlyAdmin {
+    ) external {
         require(
             collateralToken != address(0),
             "Invalid collateral token address"
@@ -121,10 +122,14 @@ contract Market is ReentrancyGuard {
             !supportedCollateralTokens[collateralToken],
             "Collateral token already added"
         );
+        require(priceFeed != address(0), "Invalid price feed address");
 
         // Mark the token as supported
         supportedCollateralTokens[collateralToken] = true;
         collateralTokenList.push(collateralToken); // Track the token
+
+        // Set the price feed for the collateral token in the PriceOracle
+        priceOracle.addPriceFeed(collateralToken, priceFeed);
 
         // Set LTV ratio using the existing function
         this.setLTVRatio(collateralToken, ltv);
@@ -135,7 +140,7 @@ contract Market is ReentrancyGuard {
     // Function to pause deposits for a collateral token
     function pauseCollateralDeposits(
         address collateralToken
-    ) external onlyAdmin {
+    ) external onlyOwner {
         require(
             supportedCollateralTokens[collateralToken],
             "Token not supported"
@@ -146,7 +151,7 @@ contract Market is ReentrancyGuard {
 
     function resumeCollateralDeposits(
         address collateralToken
-    ) external onlyAdmin {
+    ) external onlyOwner {
         require(
             supportedCollateralTokens[collateralToken],
             "Token not supported"
@@ -161,7 +166,7 @@ contract Market is ReentrancyGuard {
     }
 
     // Function to remove a collateral token from the market
-    function removeCollateralToken(address collateralToken) external onlyAdmin {
+    function removeCollateralToken(address collateralToken) external onlyOwner {
         require(
             supportedCollateralTokens[collateralToken],
             "Token not supported"
@@ -205,7 +210,7 @@ contract Market is ReentrancyGuard {
         uint256 amount
     ) external nonReentrant {
         // Update borrow index before allowing any collateral-related changes
-        updateGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
         // Ensure the collateral token is supported
         require(
             supportedCollateralTokens[collateralToken],
@@ -242,7 +247,7 @@ contract Market is ReentrancyGuard {
         uint256 amount
     ) external nonReentrant {
         // Update borrow index before allowing any collateral-related changes
-        updateGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
         require(
             supportedCollateralTokens[collateralToken],
             "Collateral token not supported"
@@ -317,7 +322,8 @@ contract Market is ReentrancyGuard {
             userTotalDebt[msg.sender] = loanAmount;
         } else {
             // Existing borrower: Add new loan + interest accrued
-            userTotalDebt[msg.sender] += loanAmount;
+            uint256 interestAccrued = _borrowerInterestAccrued(msg.sender);
+            userTotalDebt[msg.sender] += loanAmount + interestAccrued;
         }
 
         // Update last updated block per user
@@ -564,7 +570,9 @@ contract Market is ReentrancyGuard {
     // Function to calculate the total interest accrued (excluding principal)
     function _getTotalInterestAccrued() public view returns (uint256) {
         // Ensure the global borrow index is up to date
-        uint256 blocksElapsed = block.number - lastGlobalUpdateBlock;
+        uint256 blocksElapsed = block.number > lastGlobalUpdateBlock
+            ? block.number - lastGlobalUpdateBlock
+            : 1; // Ensure at least 1 block has passed
         uint256 borrowRatePerBlock = interestRateModel.getBorrowRatePerBlock();
 
         // Estimate new global borrow index
@@ -582,7 +590,10 @@ contract Market is ReentrancyGuard {
     function _borrowedPlusInterest() public view returns (uint256) {
         uint256 totalBorrowed = totalBorrows;
         uint256 totalInterestAccrued = _getTotalInterestAccrued(); // Get the total interest accrued
-        return totalBorrowed > 0 ? totalBorrowed + totalInterestAccrued : 0; // Add principal + interest
+        if (totalBorrowed == 0) {
+            return 0; // No borrowings, no interest
+        }
+        return totalBorrowed + totalInterestAccrued; // Add principal + interest
     }
 
     // Function to remove an asset from userCollateralAssets[msg.sender]

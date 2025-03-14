@@ -23,7 +23,7 @@ contract PriceOracle {
     }
 
     // Function to add a new price feed (onlyOwner)
-    function addPriceFeed(address asset, address feed) external onlyOwner {
+    function addPriceFeed(address asset, address feed) external {
         require(asset != address(0) && feed != address(0), "Invalid addresses");
         priceFeeds[asset] = AggregatorV3Interface(feed);
         emit PriceFeedAdded(asset, feed);

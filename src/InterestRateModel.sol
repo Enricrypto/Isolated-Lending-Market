@@ -43,8 +43,9 @@ contract InterestRateModel {
         _;
     }
 
-    function setMarketContract(address _marketContract) external onlyOwner {
-        marketContract = Market(_marketContract);
+    function setMarketContract(address _market) external onlyOwner {
+        require(address(marketContract) == address(0), "Market already set");
+        marketContract = Market(_market);
     }
 
     function setBaseRate(uint256 _newBaseRate) external onlyOwner {
@@ -82,6 +83,10 @@ contract InterestRateModel {
 
     // Fetch total borrows from Market Contract
     function getTotalBorrows() public view returns (uint256) {
+        require(
+            address(marketContract) != address(0),
+            "Market contract not set"
+        );
         return marketContract.totalBorrows();
     }
 
@@ -99,19 +104,34 @@ contract InterestRateModel {
 
         if (utilization < optimalUtilization) {
             // Below optimal utilization: use slope1
-            return baseRate + (utilization * slope1) / 1e18;
+            // The rate should be in terms of per block, so divide by BLOCKS_PER_YEAR
+            return baseRate + (utilization * slope1) / (1e18 * BLOCKS_PER_YEAR);
         } else {
             // Above optimal utilization: use slope2 (steep increase)
             uint256 excessUtilization = utilization - optimalUtilization;
             return
                 baseRate +
-                ((optimalUtilization * slope1) / 1e18) +
-                ((excessUtilization * slope2) / 1e18);
+                ((optimalUtilization * slope1) / (1e18 * BLOCKS_PER_YEAR)) +
+                ((excessUtilization * slope2) / (1e18 * BLOCKS_PER_YEAR));
         }
     }
 
     // Function to get borrow rate per block
     function getBorrowRatePerBlock() public view returns (uint256) {
-        return getDynamicBorrowRate() / BLOCKS_PER_YEAR;
+        require(
+            address(marketContract) != address(0),
+            "Invalid market address"
+        );
+        uint256 totalBorrows = getTotalBorrows();
+        // Prevent division by zero or zero borrows
+        if (totalBorrows == 0) {
+            return baseRate / BLOCKS_PER_YEAR; // Return base rate if no borrows
+        }
+        uint256 utilizationRate = getUtilizationRate();
+        if (utilizationRate == 0) {
+            return baseRate / BLOCKS_PER_YEAR; // Ensure we avoid division by zero
+        }
+
+        return getDynamicBorrowRate();
     }
 }

@@ -24,7 +24,7 @@ contract VaultTest is Test {
 
     uint256 public initialDeposit = 5000 * 1e18; // 5000 tokens
     uint256 public initialBalance = 10000 * 1e18; // 10000 DAI for user
-    uint256 public wethAmount = 10000 * 1e18;
+    uint256 public wethAmount = 5000 * 1e18; // 5000 WETH transfer to user
 
     function setUp() public {
         // Fork the Arbitrum mainnet at the latest block
@@ -227,12 +227,16 @@ contract VaultTest is Test {
         uint256 initialMarketBalance = dai.balanceOf(address(market));
         uint256 initialVaultBalance = dai.balanceOf(address(vault));
 
+        console.log(initialVaultBalance);
+
         vm.startPrank(address(market));
         vault.adminRepay(amountToRepay);
         vm.stopPrank();
 
         uint256 finalMarketBalance = dai.balanceOf(address(market));
         uint256 finalVaultBalance = dai.balanceOf(address(vault));
+
+        console.log(finalVaultBalance);
 
         assertEq(
             finalMarketBalance,

@@ -26,7 +26,7 @@ contract MarketTest is Test {
 
     uint256 public initialDeposit = 5000 * 1e18; // 5000 tokens
     uint256 public initialBalance = 10000 * 1e18; // 10000 DAI for user
-    uint256 public wethAmount = 10000 * 1e18;
+    uint256 public wethAmount = 5000 * 1e18; // 5000 WETH transfer to user
 
     function setUp() public {
         // Fork the Arbitrum mainnet at the latest block
@@ -100,6 +100,16 @@ contract MarketTest is Test {
         // Approve the market contract for the user to use WETH as collateral
         vm.startPrank(user);
         weth.approve(address(market), type(uint256).max);
+        vm.stopPrank();
+        console.log("Owner:", address(this));
+
+        // Approve the market contract for the user to deposit DAI (repay)
+        vm.startPrank(user);
+        dai.approve(address(market), type(uint256).max);
+        vm.stopPrank();
+
+        vm.startPrank(address(market)); // Simulate the Market contract calling
+        dai.approve(address(vault), type(uint256).max);
         vm.stopPrank();
     }
 
@@ -305,83 +315,114 @@ contract MarketTest is Test {
         );
     }
 
-    // function testRepay() public {
-    //     address collateralToken = address(weth);
-    //     address priceFeed = address(wethPrice);
-    //     uint256 ltvRatio = 75;
-    //     uint256 lentAmount = 5000 * 1e18; // 5000 DAI
-    //     uint256 depositAmount = 3 * 1e18; // 3 WETH
-    //     uint256 borrowAmount = 2000 * 1e18; // 4000 DAI
+    function testRepay() public {
+        address collateralToken = address(weth);
+        address priceFeed = address(wethPrice);
+        uint256 ltvRatio = 75;
+        uint256 lentAmount = 5000 * 1e18; // 5000 DAI
+        uint256 depositAmount = 3 * 1e18; // 3 WETH
+        uint256 borrowAmount = 2000 * 1e18; // 4000 DAI
 
-    //     // Lender deposits DAi into vault
-    //     vm.startPrank(lender);
-    //     vault.deposit(lentAmount, lender);
-    //     vm.stopPrank();
+        // Lender deposits DAi into vault
+        vm.startPrank(lender);
+        vault.deposit(lentAmount, lender);
+        vm.stopPrank();
 
-    //     // Add collateral token
-    //     vm.startPrank(address(this));
-    //     market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
-    //     vm.stopPrank();
+        // Add collateral token
+        vm.startPrank(address(this));
+        market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
+        vm.stopPrank();
 
-    //     // User deposits collateral into market
-    //     vm.startPrank(user);
-    //     market.depositCollateral(collateralToken, depositAmount);
-    //     vm.stopPrank();
+        // User deposits collateral into market
+        vm.startPrank(user);
+        market.depositCollateral(collateralToken, depositAmount);
+        vm.stopPrank();
 
-    //     uint256 userDebtBefore = market.userTotalDebt(user);
-    //     uint256 userBalanceBefore = dai.balanceOf(user);
-    //     uint256 vaultBalanceBefore = dai.balanceOf(address(vault));
+        uint256 userDebtBeforeBorrow = market.userTotalDebt(user);
+        uint256 userBalanceBeforeBorrow = dai.balanceOf(user);
+        uint256 vaultBalanceBeforeBorrow = dai.balanceOf(address(vault));
 
-    //     // User borrows loan asset
-    //     vm.startPrank(user);
-    //     market.borrow(borrowAmount);
-    //     vm.stopPrank();
+        console.log("User debt before borrow:", userDebtBeforeBorrow);
+        console.log("User balance before borrow:", userBalanceBeforeBorrow);
+        console.log("Vault balance before borrow:", vaultBalanceBeforeBorrow);
 
-    //     uint256 userBalanceAfter = dai.balanceOf(user);
-    //     uint256 vaultBalanceAfter = dai.balanceOf(address(vault));
-    //     uint256 userDebtAfter = market.userTotalDebt(user);
+        // User borrows loan asset
+        vm.startPrank(user);
+        market.borrow(borrowAmount);
+        vm.stopPrank();
 
-    //     console.log("User debt after:", userDebtAfter);
+        // Simulate 2000 blocks passing
+        vm.roll(block.number + 200);
 
-    //     assertEq(
-    //         userBalanceAfter,
-    //         userBalanceBefore + borrowAmount,
-    //         "User's balance of DAI should increase after borrowing"
-    //     );
+        uint256 userDebtAfterBorrow = market.userTotalDebt(user);
+        uint256 userBalanceAfterBorrow = dai.balanceOf(user);
+        uint256 vaultBalanceAfterBorrow = dai.balanceOf(address(vault));
 
-    //     assertEq(
-    //         vaultBalanceAfter,
-    //         vaultBalanceBefore - borrowAmount,
-    //         "Vault's balance of DAI should decrease after borrowing"
-    //     );
+        console.log("User debt after borrow:", userDebtAfterBorrow);
+        console.log("User Balance after borrow:", userBalanceAfterBorrow);
+        console.log("vault balance after borrow:", vaultBalanceAfterBorrow);
 
-    //     assertEq(
-    //         userDebtAfter,
-    //         userDebtBefore + borrowAmount,
-    //         "User's debt should increase after borrowing"
-    //     );
+        assertEq(
+            userBalanceAfterBorrow,
+            userBalanceBeforeBorrow + borrowAmount,
+            "User's balance of DAI should increase after borrowing"
+        );
 
-    //     // Simulate 2000 blocks passing
-    //     vm.roll(block.number + 100);
+        assertEq(
+            vaultBalanceAfterBorrow,
+            vaultBalanceBeforeBorrow - borrowAmount,
+            "Vault's balance of DAI should decrease after borrowing"
+        );
 
-    //     // User borrows loan asset
-    //     vm.startPrank(user);
-    //     market.borrow(500 * 1e18);
-    //     vm.stopPrank();
+        assertEq(
+            userDebtAfterBorrow,
+            userDebtBeforeBorrow + borrowAmount,
+            "User's debt should increase after borrowing"
+        );
 
-    //     uint256 userDebtFinal = market.userTotalDebt(user);
+        // User borrows again
+        vm.startPrank(user);
+        market.borrow(500 * 1e18);
+        vm.stopPrank();
 
-    //     console.log("User debt final:", userDebtFinal);
+        // Simulate 2000 blocks passing
+        vm.roll(block.number + 200);
 
-    // uint256 partialRepayment = userDebtAfter / 2;
-    // uint256 fullRepayment = userDebtAfter;
+        uint256 userDebtBeforeRepay = market.userTotalDebt(user);
+        uint256 userBalanceBeforeRepay = dai.balanceOf(user);
+        uint256 vaultBalanceBeforeRepay = dai.balanceOf(address(vault));
+        uint256 userCollateralBalanceBeforeRepay = market
+            .userCollateralBalances(user, address(weth));
 
-    // // User partially repays debt
-    // vm.startPrank(user);
-    // market.repay(partialRepayment);
-    // vm.stopPrank();
+        console.log("User debt before repay:", userDebtBeforeRepay);
+        console.log("User Balance before repay:", userBalanceBeforeRepay);
+        console.log("vault balance before repay:", vaultBalanceBeforeRepay);
+        console.log(
+            "user collateral balance before repay:",
+            userCollateralBalanceBeforeRepay
+        );
 
-    // uint256 userBalanceFinal = dai.balanceOf(user);
-    // uint256 vaultBalanceFinal = dai.balanceOf(address(vault));
-    // }
+        uint256 partialRepayment = userDebtBeforeRepay / 2;
+
+        // User partially repays debt
+        vm.startPrank(user);
+        market.repay(partialRepayment);
+        vm.stopPrank();
+
+        uint256 userDebtAfterRepay = market.userTotalDebt(user);
+        uint256 userBalanceAfterRepay = dai.balanceOf(user);
+        uint256 vaultBalanceAfterRepay = dai.balanceOf(address(vault));
+        uint256 userCollateralBalanceAfterRepay = market.userCollateralBalances(
+            user,
+            address(weth)
+        );
+
+        console.log("User debt after repay:", userDebtAfterRepay);
+        console.log("User Balance after repay:", userBalanceAfterRepay);
+        console.log("vault balance after repay:", vaultBalanceAfterRepay);
+        console.log(
+            "user collateral balance after repay:",
+            userCollateralBalanceAfterRepay
+        );
+    }
 }

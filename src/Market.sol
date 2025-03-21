@@ -42,8 +42,8 @@ contract Market is ReentrancyGuard {
     // Mapping to track total debt of each user
     mapping(address => uint256) public userTotalDebt;
 
-    // Track the last time each user took a loan
-    mapping(address => uint256) public lastUpdatedTime;
+    // Track the last updated index of a user
+    mapping(address => uint256) public lastUpdatedIndex;
 
     // Mapping to store the LTV ratio for each collateral token
     mapping(address => uint256) public ltvRatios;
@@ -251,6 +251,11 @@ contract Market is ReentrancyGuard {
             userCollateralAssets[msg.sender].push(collateralToken);
         }
 
+        // If the user has an active borrow position, update their lastUpdatedIndex
+        if (userTotalDebt[msg.sender] > 0) {
+            lastUpdatedIndex[msg.sender] = globalBorrowIndex;
+        }
+
         // Emit an event for the deposit
         emit CollateralDeposited(msg.sender, collateralToken, amount);
     }
@@ -289,6 +294,11 @@ contract Market is ReentrancyGuard {
         // If user has no more of this collateral, remove it from the collateral assets list
         if (userCollateralBalances[msg.sender][collateralToken] == 0) {
             _removeCollateralAsset(msg.sender, collateralToken);
+        }
+
+        // If the user has an active borrow position, update their lastUpdatedIndex
+        if (userTotalDebt[msg.sender] > 0) {
+            lastUpdatedIndex[msg.sender] = globalBorrowIndex;
         }
 
         emit CollateralWithdrawn(msg.sender, collateralToken, amount);
@@ -339,9 +349,8 @@ contract Market is ReentrancyGuard {
             userTotalDebt[msg.sender] += loanAmount + interestAccrued;
         }
 
-        // Update last updated time per user
-        // It tracks when this specific borrower last took a loan
-        lastUpdatedTime[msg.sender] = block.timestamp;
+        // Update the borrower's last interaction index to the current global borrow index
+        lastUpdatedIndex[msg.sender] = globalBorrowIndex;
 
         // Update the total borrows
         totalBorrows += loanAmount;
@@ -421,12 +430,8 @@ contract Market is ReentrancyGuard {
         // Updates the borrower’s debt
         userTotalDebt[msg.sender] -= actualRepayment;
 
-        // If fully paid, reset last updated time
-        if (userTotalDebt[msg.sender] == 0) {
-            lastUpdatedTime[msg.sender] = 0;
-        } else {
-            lastUpdatedTime[msg.sender] = block.timestamp;
-        }
+        // Update the borrower's last updated index to the current global borrow index
+        lastUpdatedIndex[msg.sender] = globalBorrowIndex;
 
         uint256 interestAccrued = _borrowerInterestAccrued(msg.sender);
 
@@ -551,25 +556,18 @@ contract Market is ReentrancyGuard {
     function _borrowerInterestAccrued(
         address borrower
     ) public view returns (uint256) {
-        // This gives us the current interest rate per block.
-        uint256 borrowRatePerSecond = interestRateModel
-            .getBorrowRatePerSecond();
+        // If the borrower has not borrowed or no debt is recorded, return 0
+        if (userTotalDebt[borrower] == 0 || lastUpdatedIndex[borrower] == 0) {
+            return 0;
+        }
 
-        // Get the last block when the user's debt was updated
-        uint256 lastUpdatedTime = lastUpdatedTime[borrower];
-        if (lastUpdatedTime == 0) return 0; // No borrowing yet
+        // Get the borrower's last known index and the current global borrow index
+        uint256 lastBorrowerIndex = lastUpdatedIndex[borrower];
+        uint2156 currentGlobalIndex = globalBorrowIndex;
 
-        uint256 elapsedTime = block.timestamp - lastUpdatedTime;
-
-        uint256 previousIndex = globalBorrowIndex;
-        // The new index is calculated by applying the interest over blocksElapsed to the previous globalBorrowIndex.
-        // This formula compounds interest over time
-        uint256 newIndex = (previousIndex *
-            (1e18 + (borrowRatePerSecond * elapsedTime))) / 1e18;
-
-        // We multiply this difference by the user's debt to get the interest accrued
+        // Interest accrued is the difference in indices multiplied by the borrower's debt
         uint256 interestAccrued = (userTotalDebt[borrower] *
-            (newIndex - previousIndex)) / 1e18; // Adjusted for precision
+            (currentGlobalIndex - lastBorrowerIndex)) / 1e18;
 
         return interestAccrued;
     }
@@ -583,9 +581,12 @@ contract Market is ReentrancyGuard {
         // Update the global borrow index based on the time elapsed (in blocks)
         uint256 elapsedTime = block.timestamp - lastGlobalUpdateTime;
 
+        // If no time has passed, return early to save gas
+        if (elapsedTime == 0) return;
+
         // Formula: newIndex = oldIndex * (1 + borrowRatePerSecond * blocksElapsed)
-        uint256 newGlobalBorrowIndex = (globalBorrowIndex *
-            (1e18 + (borrowRatePerSecond * elapsedTime))) / 1e18;
+        uint256 factor = 1e18 + (borrowRatePerSecond * elapsedTime);
+        uint256 newGlobalBorrowIndex = (globalBorrowIndex * factor) / 1e18;
 
         // Calculate the total interest accrued since the last update
         uint256 totalInterestAccrued = (totalBorrows *
@@ -597,7 +598,7 @@ contract Market is ReentrancyGuard {
         // Update the global borrow index
         globalBorrowIndex = newGlobalBorrowIndex;
 
-        // Update the last time where the borrow index was updated
+        // Update the last updated timestamp
         lastGlobalUpdateTime = block.timestamp;
     }
 

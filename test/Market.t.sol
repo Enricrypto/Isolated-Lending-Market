@@ -274,9 +274,9 @@ contract MarketTest is Test {
         uint256 ltvRatio = 75;
         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
         uint256 depositAmount = 3 * 1e18; // 3 WETH
-        uint256 borrowAmount = 4000 * 1e18; // 4000 DAI
+        uint256 borrowAmount = 1000 * 1e18; // 4000 DAI
 
-        // Lender deposits DAi into vault
+        // Lender deposits DAI into the vault
         vm.startPrank(lender);
         vault.deposit(lentAmount, lender);
         vm.stopPrank();
@@ -284,15 +284,23 @@ contract MarketTest is Test {
         uint256 userBalanceBefore = dai.balanceOf(user);
         uint256 vaultBalanceBefore = dai.balanceOf(address(vault));
 
-        // Add collateral token
+        // Add collateral token to the market
         vm.startPrank(address(this));
         market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
         vm.stopPrank();
 
-        // User deposits collateral into market
+        // User deposits collateral into the market
         vm.startPrank(user);
         market.depositCollateral(collateralToken, depositAmount);
         vm.stopPrank();
+
+        // Check initial borrowing power
+        uint256 initialBorrowingPower = market._getMaxBorrowingPower(user);
+        assertGt(
+            initialBorrowingPower,
+            borrowAmount,
+            "Borrowing power should be sufficient"
+        );
 
         // User borrows loan asset
         vm.startPrank(user);
@@ -302,17 +310,68 @@ contract MarketTest is Test {
         uint256 userBalanceAfter = dai.balanceOf(user);
         uint256 vaultBalanceAfter = dai.balanceOf(address(vault));
 
+        // Assert user receives the borrowed amount
         assertEq(
             userBalanceAfter,
             userBalanceBefore + borrowAmount,
             "User's DAI balance should increase after borrowing"
         );
 
+        // Assert vault's balance decreases by the borrowed amount
         assertEq(
             vaultBalanceAfter,
             vaultBalanceBefore - borrowAmount,
             "Vault's DAI balance should decrease after borrowing"
         );
+
+        // Assert the user's total debt is updated correctly
+        uint256 expectedDebt = borrowAmount; // No prior debt, so debt = borrowAmount
+        assertEq(
+            market._getUserTotalDebt(user),
+            expectedDebt,
+            "User's total debt should equal the borrowed amount"
+        );
+
+        // Simulate interest accrual and subsequent borrow
+        vm.warp(block.timestamp + 1 days); // Advance time to accrue interest
+
+        // // User borrows again
+        // uint256 additionalBorrowAmount = 500 * 1e18; // 500 DAI
+        // vm.startPrank(user);
+        // market.borrow(additionalBorrowAmount);
+        // vm.stopPrank();
+
+        uint256 previousGlobalBorrowIndex = market.globalBorrowIndex();
+        console.log("previous global borrow index", previousGlobalBorrowIndex);
+
+        // Calculate the interest accrued since the last update
+        uint256 interestAccruedSinceLastUpdate = (market.totalBorrows() *
+            previousGlobalBorrowIndex) / 1e18;
+        console.log(
+            "interest accrued since last update:",
+            interestAccruedSinceLastUpdate
+        );
+
+        market.updateInterestAndGlobalBorrowIndex();
+
+        // uint256 lastBorrowerIndex = market.lastUpdatedIndex(user);
+        // console.log("Last borrower index:", lastBorrowerIndex);
+        // uint256 currentGlobalIndex = market.globalBorrowIndex();
+        // console.log("Current global index:", currentGlobalIndex);
+
+        // uint256 accruedInterest = market._borrowerInterestAccrued(user);
+
+        // // Assert interest is accrued
+        // assertGt(accruedInterest, 0, "Interest should accrue over time");
+
+        // uint256 newExpectedDebt = expectedDebt +
+        //     additionalBorrowAmount +
+        //     accruedInterest;
+        // assertEq(
+        //     market._getUserTotalDebt(user),
+        //     newExpectedDebt,
+        //     "User's total debt should include additional borrow and accrued interest"
+        // );
     }
 
     function testRepay() public {

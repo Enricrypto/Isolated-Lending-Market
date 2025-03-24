@@ -67,12 +67,8 @@ contract Market is ReentrancyGuard {
         uint256 amount
     );
     event LTVRatioSet(address indexed collateralToken, uint256 ltvRatio);
-    event Borrow(address indexed user, uint256 loanAmount, uint256 borrowRate);
-    event Repay(
-        address indexed user,
-        uint256 amountRepaid,
-        uint256 collateralReturned
-    );
+    event Borrow(address indexed user, uint256 loanAmount);
+    event Repay(address indexed user, uint256 amountRepaid);
     event LogAddress(address);
 
     constructor(
@@ -223,7 +219,7 @@ contract Market is ReentrancyGuard {
         uint256 amount
     ) external nonReentrant {
         // Update borrow index before allowing any collateral-related changes
-        _updateInterestAndGlobalBorrowIndex();
+        _updateInterestGlobalBorrowIndex();
         // Ensure the collateral token is supported
         require(
             supportedCollateralTokens[collateralToken],
@@ -265,7 +261,7 @@ contract Market is ReentrancyGuard {
         uint256 amount
     ) external nonReentrant {
         // Update borrow index before allowing any collateral-related changes
-        _updateInterestAndGlobalBorrowIndex();
+        _updateInterestGlobalBorrowIndex();
         require(
             supportedCollateralTokens[collateralToken],
             "Collateral token not supported"
@@ -310,7 +306,7 @@ contract Market is ReentrancyGuard {
         require(loanAmount > 0, "Loan amount must be greater than zero");
 
         // Make sure the global borrow index reflects the latest state of the interest rate before any borrowing occurs
-        _updateInterestAndGlobalBorrowIndex();
+        _updateInterestGlobalBorrowIndex();
 
         // Ensure the vault has enough liquidity to cover the loan amount
         // No borrower can borrow more than what the vault can actually lend, preventing over-borrowing
@@ -320,18 +316,15 @@ contract Market is ReentrancyGuard {
             "Vault has insufficient liquidity for this loan"
         );
 
-        // Calculates the maximum borrowing power by calling _getMaxBorrowingPower(), which internally calls
+        // Calculates the maximum borrowing power by calling _maxBorrowingPower(), which internally calls
         // _getUserTotalDebt() and computes the total debt, including interest accrued, by calling _borrowerInterestAccrued()
-        uint256 availableBorrowingPower = _getMaxBorrowingPower(msg.sender);
+        uint256 availableBorrowingPower = _maxBorrowingPower(msg.sender);
 
         // Ensure user has enough borrowing power to take this loan
         require(
             availableBorrowingPower >= loanAmount,
             "Not enough borrowing power to take this loan"
         );
-
-        // Fetch the borrow rate at this moment
-        uint256 currentBorrowRate = interestRateModel.getBorrowRatePerBlock();
 
         // Call Vault's adminBorrowFunction to withdraw funds to Market contract
         vaultContract.adminBorrow(loanAmount);
@@ -355,92 +348,56 @@ contract Market is ReentrancyGuard {
         // Update the total borrows
         totalBorrows += loanAmount;
 
-        emit Borrow(msg.sender, loanAmount, currentBorrowRate);
+        emit Borrow(msg.sender, loanAmount);
     }
 
-    function repay(uint256 repaymentAmount) external nonReentrant {
+    function repay(uint256 repayAmount) external nonReentrant {
         // Ensure the repayment amount is valid
-        require(
-            repaymentAmount > 0,
-            "Repayment amount must be greater than zero"
-        );
+        require(repayAmount > 0, "Repayment amount must be greater than zero");
 
         // Ensure index is up to date before calculating anything related to the user's debt
-        _updateInterestAndGlobalBorrowIndex();
+        _updateInterestGlobalBorrowIndex();
 
-        // User's debt is calculated including interests accrued with updated global borrow index
-        uint256 userDebt = _getUserTotalDebt(msg.sender);
-        require(userDebt > 0, "No outstanding debt to repay");
+        // Ensure the repay amount covers at least the interest accrued
+        uint256 interestAccrued = _borrowerInterestAccrued(msg.sender);
+        require(
+            repayAmount >= interestAccrued,
+            "Repay amount must cover interest"
+        );
 
-        // Ensure user is not repaying more than what they owe
-        uint256 actualRepayment = repaymentAmount > userDebt
-            ? userDebt
-            : repaymentAmount;
+        // Calculate the principal portion of the repayment
+        uint256 principalRepayment = repayAmount - interestAccrued;
+
+        // Update the borrower's total debt and ensure it doesn't go negative
+        uint256 userDebt = userTotalDebt[msg.sender];
+        require(repayAmount <= userDebt, "Repayment exceeds debt");
 
         // Transfer tokens from the borrower to the market contract
         bool success = loanAsset.transferFrom(
             msg.sender,
             address(this),
-            actualRepayment
+            repayAmount
         );
 
         require(success, "Transfer failed: insufficient allowance or balance");
 
         // Call Vault's adminRepayFunction to return funds to the Vault
-        vaultContract.adminRepay(actualRepayment);
+        vaultContract.adminRepay(repayAmount);
 
-        // Calculate the proportion of debt repayment
-        uint256 repaymentRatio = (actualRepayment * 1e18) / userDebt;
+        // Update total borrows (subtract only the principal portion)
+        require(
+            totalBorrows >= principalRepayment,
+            "Underflow in total borrows"
+        );
+        totalBorrows -= principalRepayment;
 
-        // Get all user's collateral assets
-        address[] memory userCollateralTokens = userCollateralAssets[
-            msg.sender
-        ];
-
-        uint256 totalCollateralReturned = 0; // Track total collateral returned
-
-        for (uint256 i = 0; i < userCollateralTokens.length; i++) {
-            address collateralToken = userCollateralTokens[i];
-            uint256 userCollateral = userCollateralBalances[msg.sender][
-                collateralToken
-            ];
-
-            if (userCollateral > 0) {
-                // Calculate the collateral amount to return based on repayment ratio
-                uint256 collateralToReturn = (userCollateral * repaymentRatio) /
-                    1e18;
-
-                // Transfer collateral back to the user
-                if (collateralToReturn > 0) {
-                    IERC20(collateralToken).transfer(
-                        msg.sender,
-                        collateralToReturn
-                    );
-                    // Update user's collateral balance (reduce collateral balance)
-                    userCollateralBalances[msg.sender][
-                        collateralToken
-                    ] -= collateralToReturn;
-
-                    // Track total collateral returned
-                    totalCollateralReturned += collateralToReturn;
-                }
-            }
-        }
-
-        // Updates the borrower’s debt
-        userTotalDebt[msg.sender] -= actualRepayment;
+        // Update the borrower’s debt
+        userTotalDebt[msg.sender] -= repayAmount;
 
         // Update the borrower's last updated index to the current global borrow index
         lastUpdatedIndex[msg.sender] = globalBorrowIndex;
 
-        uint256 interestAccrued = _borrowerInterestAccrued(msg.sender);
-
-        // Deduct repaid interest from lastAccruedInterest
-        lastAccruedInterest -= interestAccrued;
-
-        // Update total borrows in the system
-        totalBorrows -= actualRepayment;
-        emit Repay(msg.sender, actualRepayment, totalCollateralReturned);
+        emit Repay(msg.sender, repayAmount);
     }
 
     // ======= HELPER FUNCTIONS ========
@@ -492,7 +449,7 @@ contract Market is ReentrancyGuard {
         );
 
         // Update global borrow index to ensure interest rates are up-to-date
-        _updateInterestAndGlobalBorrowIndex();
+        _updateInterestGlobalBorrowIndex();
 
         // Get the user's current borrowing power
         uint256 totalBorrowingPower = _getUserTotalBorrowingPower(user);
@@ -535,9 +492,9 @@ contract Market is ReentrancyGuard {
     }
 
     // Helper function to calculate the maximum borrowing power of a user
-    function _getMaxBorrowingPower(address user) internal returns (uint256) {
+    function _maxBorrowingPower(address user) internal returns (uint256) {
         // Update the global borrow index to ensure the interest rates are up to date
-        _updateInterestAndGlobalBorrowIndex();
+        _updateInterestGlobalBorrowIndex();
 
         uint256 borrowingPower = _getUserTotalBorrowingPower(user);
         uint256 totalDebt = _getUserTotalDebt(user);
@@ -552,6 +509,11 @@ contract Market is ReentrancyGuard {
         return maxBorrowingPower;
     }
 
+    // External function to expose max borrowing power calculation
+    function _getMaxBorrowingPower(address user) external returns (uint256) {
+        return _maxBorrowingPower(user);
+    }
+
     // Helper function to calculate accrued interest on a debt considering dynamic rates
     function _borrowerInterestAccrued(
         address borrower
@@ -563,7 +525,7 @@ contract Market is ReentrancyGuard {
 
         // Get the borrower's last known index and the current global borrow index
         uint256 lastBorrowerIndex = lastUpdatedIndex[borrower];
-        uint2156 currentGlobalIndex = globalBorrowIndex;
+        uint256 currentGlobalIndex = globalBorrowIndex;
 
         // Interest accrued is the difference in indices multiplied by the borrower's debt
         uint256 interestAccrued = (userTotalDebt[borrower] *
@@ -573,47 +535,53 @@ contract Market is ReentrancyGuard {
     }
 
     // Function to update the global borrow index and the total interest accrued for the whole market
-    function _updateInterestAndGlobalBorrowIndex() private {
-        // Get the current borrow rate per block from the interest rate model
-        uint256 borrowRatePerSecond = interestRateModel
-            .getBorrowRatePerSecond();
+    function _updateInterestGlobalBorrowIndex() private {
+        // Get the current total borrows and total supply in the system
+        uint256 totalBorrowed = totalBorrows; // Total amount of borrows in the system
+        uint256 totalSupply = vaultContract.totalAssets(); // Total amount of assets in the system
 
-        // Update the global borrow index based on the time elapsed (in blocks)
-        uint256 elapsedTime = block.timestamp - lastGlobalUpdateTime;
+        // If there are no borrows, no interest accrual is required
+        if (totalBorrowed == 0) {
+            return;
+        }
 
-        // If no time has passed, return early to save gas
-        if (elapsedTime == 0) return;
+        // Prevent division by zero
+        if (totalSupply == 0) return;
 
-        // Formula: newIndex = oldIndex * (1 + borrowRatePerSecond * blocksElapsed)
-        uint256 factor = 1e18 + (borrowRatePerSecond * elapsedTime);
-        uint256 newGlobalBorrowIndex = (globalBorrowIndex * factor) / 1e18;
+        // Store the current global borrow index before the update
+        uint256 previousGlobalBorrowIndex = globalBorrowIndex;
 
-        // Calculate the total interest accrued since the last update
-        uint256 totalInterestAccrued = (totalBorrows *
-            (newGlobalBorrowIndex - globalBorrowIndex)) / 1e18;
+        // Calculate the interest accrued since the last update
+        uint256 interestAccruedSinceLastUpdate = (totalBorrows *
+            previousGlobalBorrowIndex) / 1e18;
 
-        // Update the total interest accrued
-        lastAccruedInterest += totalInterestAccrued;
+        // Calculate the new global borrow index (using the updated values)
+        uint256 newGlobalBorrowIndex = ((totalBorrows +
+            interestAccruedSinceLastUpdate) * 1e18) / totalSupply;
 
-        // Update the global borrow index
+        // If the new index equals the previous index, avoid underflow
+        if (newGlobalBorrowIndex <= previousGlobalBorrowIndex) {
+            return;
+        }
+
+        // Update the total interest accrued for the platform
+        lastAccruedInterest += interestAccruedSinceLastUpdate;
+
+        // Set the new global borrow index
         globalBorrowIndex = newGlobalBorrowIndex;
-
-        // Update the last updated timestamp
-        lastGlobalUpdateTime = block.timestamp;
     }
 
     function updateInterestAndGlobalBorrowIndex() external {
-        _updateInterestAndGlobalBorrowIndex();
+        _updateInterestGlobalBorrowIndex();
     }
 
     // Function to calculate total borrows plus accrued interest
-    function _borrowedPlusInterest() public view returns (uint256) {
+    function _lentAssets() public view returns (uint256) {
         uint256 totalBorrowed = totalBorrows;
-        uint256 totalInterestAccrued = lastAccruedInterest; // Latest accrued Interest
         if (totalBorrowed == 0) {
             return 0; // No borrowings, no interest
         }
-        return totalBorrowed + totalInterestAccrued; // Add principal + interest
+        return totalBorrowed;
     }
 
     // Function to remove an asset from userCollateralAssets[msg.sender]

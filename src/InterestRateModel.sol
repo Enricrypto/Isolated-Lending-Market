@@ -14,8 +14,6 @@ contract InterestRateModel {
     Vault public vaultContract;
     Market public marketContract; // Address of marketContract to fetch supply/borrow data
 
-    uint256 constant SECONDS_PER_YEAR = 365 * 24 * 60 * 60; // 31,536,000 seconds in a year
-
     event InterestRateUpdated(address indexed asset, uint256 rate);
 
     constructor(
@@ -102,24 +100,5 @@ contract InterestRateModel {
                 ((optimalUtilization * slope1) / 1e18) +
                 ((excessUtilization * slope2) / 1e18);
         }
-    }
-
-    // Function to get borrow rate per block
-    function getBorrowRatePerSecond() public view returns (uint256) {
-        require(
-            address(marketContract) != address(0),
-            "Invalid market address"
-        );
-        uint256 totalBorrows = getTotalBorrows();
-        // Prevent division by zero or zero borrows
-        if (totalBorrows == 0) {
-            return baseRate / SECONDS_PER_YEAR; // Return base rate if no borrows
-        }
-        uint256 utilizationRate = getUtilizationRate();
-        if (utilizationRate == 0) {
-            return baseRate / SECONDS_PER_YEAR; // Ensure we avoid division by zero
-        }
-
-        return getDynamicBorrowRate() / SECONDS_PER_YEAR;
     }
 }

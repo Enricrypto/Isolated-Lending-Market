@@ -274,14 +274,14 @@ contract MarketTest is Test {
         uint256 ltvRatio = 75;
         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
         uint256 depositAmount = 3 * 1e18; // 3 WETH
-        uint256 borrowAmount = 1000 * 1e18; // 4000 DAI
+        uint256 borrowAmount1 = 300 * 1e18; // First borrow: 300 DAI
+        uint256 borrowAmount2 = 500 * 1e18; // Second borrow: 500 DAI
 
         // Lender deposits DAI into the vault
         vm.startPrank(lender);
         vault.deposit(lentAmount, lender);
         vm.stopPrank();
 
-        uint256 userBalanceBefore = dai.balanceOf(user);
         uint256 vaultBalanceBefore = dai.balanceOf(address(vault));
 
         // Add collateral token to the market
@@ -294,84 +294,72 @@ contract MarketTest is Test {
         market.depositCollateral(collateralToken, depositAmount);
         vm.stopPrank();
 
-        // Check initial borrowing power
-        uint256 initialBorrowingPower = market._getMaxBorrowingPower(user);
-        assertGt(
-            initialBorrowingPower,
-            borrowAmount,
-            "Borrowing power should be sufficient"
-        );
-
-        // User borrows loan asset
+        // First borrow
         vm.startPrank(user);
-        market.borrow(borrowAmount);
+        market.borrow(borrowAmount1);
         vm.stopPrank();
 
-        uint256 userBalanceAfter = dai.balanceOf(user);
-        uint256 vaultBalanceAfter = dai.balanceOf(address(vault));
+        uint256 globalBorrowIndex1 = market.globalBorrowIndex();
+        uint256 userDebtAfterBorrow1 = market._getUserTotalDebt(user);
 
-        // Assert user receives the borrowed amount
+        // Assert first borrow updated user's debt correctly
         assertEq(
-            userBalanceAfter,
-            userBalanceBefore + borrowAmount,
-            "User's DAI balance should increase after borrowing"
+            userDebtAfterBorrow1,
+            borrowAmount1,
+            "User's debt should equal the first borrowed amount"
         );
 
-        // Assert vault's balance decreases by the borrowed amount
-        assertEq(
-            vaultBalanceAfter,
-            vaultBalanceBefore - borrowAmount,
-            "Vault's DAI balance should decrease after borrowing"
-        );
-
-        // Assert the user's total debt is updated correctly
-        uint256 expectedDebt = borrowAmount; // No prior debt, so debt = borrowAmount
-        assertEq(
-            market._getUserTotalDebt(user),
-            expectedDebt,
-            "User's total debt should equal the borrowed amount"
-        );
-
-        // Simulate interest accrual and subsequent borrow
-        vm.warp(block.timestamp + 1 days); // Advance time to accrue interest
-
-        // // User borrows again
-        // uint256 additionalBorrowAmount = 500 * 1e18; // 500 DAI
-        // vm.startPrank(user);
-        // market.borrow(additionalBorrowAmount);
-        // vm.stopPrank();
-
-        uint256 previousGlobalBorrowIndex = market.globalBorrowIndex();
-        console.log("previous global borrow index", previousGlobalBorrowIndex);
-
-        // Calculate the interest accrued since the last update
-        uint256 interestAccruedSinceLastUpdate = (market.totalBorrows() *
-            previousGlobalBorrowIndex) / 1e18;
-        console.log(
-            "interest accrued since last update:",
-            interestAccruedSinceLastUpdate
-        );
-
+        // Update interest and global borrow index without user interaction
         market.updateInterestAndGlobalBorrowIndex();
 
-        // uint256 lastBorrowerIndex = market.lastUpdatedIndex(user);
-        // console.log("Last borrower index:", lastBorrowerIndex);
-        // uint256 currentGlobalIndex = market.globalBorrowIndex();
-        // console.log("Current global index:", currentGlobalIndex);
+        uint256 globalBorrowIndex2 = market.globalBorrowIndex();
+        uint256 userDebtAfterUpdate = market._getUserTotalDebt(user);
 
-        // uint256 accruedInterest = market._borrowerInterestAccrued(user);
+        // Assert first update is updating user's debt correctly
+        assertGt(
+            userDebtAfterUpdate,
+            userDebtAfterBorrow1,
+            "User's debt should increase after first update"
+        );
 
-        // // Assert interest is accrued
-        // assertGt(accruedInterest, 0, "Interest should accrue over time");
+        // Ensure global borrow index increased
+        assertGt(
+            globalBorrowIndex2,
+            globalBorrowIndex1,
+            "Global borrow index should increase after interest accrual"
+        );
 
-        // uint256 newExpectedDebt = expectedDebt +
-        //     additionalBorrowAmount +
-        //     accruedInterest;
-        // assertEq(
-        //     market._getUserTotalDebt(user),
-        //     newExpectedDebt,
-        //     "User's total debt should include additional borrow and accrued interest"
-        // );
+        // Second borrow
+        vm.startPrank(user);
+        market.borrow(borrowAmount2);
+        vm.stopPrank();
+
+        uint256 userDebtAfterBorrow2 = market._getUserTotalDebt(user);
+        uint256 totalExpectedDebt = borrowAmount1 + borrowAmount2;
+
+        // Assert total debt is updated after the second borrow
+        assertGt(
+            userDebtAfterBorrow2,
+            userDebtAfterUpdate,
+            "User's total debt should increase after second borrow"
+        );
+
+        uint256 globalBorrowIndex3 = market.globalBorrowIndex();
+
+        // Ensure global borrow index increased again
+        assertGt(
+            globalBorrowIndex3,
+            globalBorrowIndex2,
+            "Global borrow index should increase after second interest accrual"
+        );
+
+        // Assert vault balance decreases by the total borrowed amount
+        uint256 vaultBalanceAfter = dai.balanceOf(address(vault));
+        assertEq(
+            vaultBalanceAfter,
+            vaultBalanceBefore - totalExpectedDebt,
+            "Vault's DAI balance should decrease by the total borrowed amount"
+        );
     }
 
     function testRepay() public {
@@ -380,90 +368,84 @@ contract MarketTest is Test {
         uint256 ltvRatio = 75;
         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
         uint256 depositAmount = 3 * 1e18; // 3 WETH
-        uint256 borrowAmount = 2000 * 1e18; // 4000 DAI
+        uint256 borrowAmount = 2000 * 1e18; // 2000 DAI
+        uint256 additionalBorrowAmount = 500 * 1e18; // Additional borrow: 500 DAI
 
-        // Lender deposits DAi into vault
+        // Lender deposits DAI into the vault
         vm.startPrank(lender);
         vault.deposit(lentAmount, lender);
         vm.stopPrank();
 
-        // Add collateral token
+        // Add collateral token to the market
         vm.startPrank(address(this));
         market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
         vm.stopPrank();
 
-        // User deposits collateral into market
+        // User deposits collateral into the market
         vm.startPrank(user);
         market.depositCollateral(collateralToken, depositAmount);
         vm.stopPrank();
 
-        uint256 userDebtBeforeBorrow = market.userTotalDebt(user);
+        // Initial borrowing checks
         uint256 userBalanceBeforeBorrow = dai.balanceOf(user);
         uint256 vaultBalanceBeforeBorrow = dai.balanceOf(address(vault));
 
-        console.log("User debt before borrow:", userDebtBeforeBorrow);
-        console.log("User balance before borrow:", userBalanceBeforeBorrow);
-        console.log("Vault balance before borrow:", vaultBalanceBeforeBorrow);
-
-        // User borrows loan asset
+        // User borrows for the first time
         vm.startPrank(user);
         market.borrow(borrowAmount);
         vm.stopPrank();
 
-        // Simulate 2000 blocks passing
-        vm.roll(block.number + 200);
+        uint256 userDebtAfterFirstBorrow = market.userTotalDebt(user);
+        uint256 userBalanceAfterFirstBorrow = dai.balanceOf(user);
+        uint256 vaultBalanceAfterFirstBorrow = dai.balanceOf(address(vault));
 
-        uint256 userDebtAfterBorrow = market.userTotalDebt(user);
-        uint256 userBalanceAfterBorrow = dai.balanceOf(user);
-        uint256 vaultBalanceAfterBorrow = dai.balanceOf(address(vault));
-
-        console.log("User debt after borrow:", userDebtAfterBorrow);
-        console.log("User Balance after borrow:", userBalanceAfterBorrow);
-        console.log("vault balance after borrow:", vaultBalanceAfterBorrow);
-
+        // Assert first borrow
         assertEq(
-            userBalanceAfterBorrow,
+            userBalanceAfterFirstBorrow,
             userBalanceBeforeBorrow + borrowAmount,
             "User's balance of DAI should increase after borrowing"
         );
-
         assertEq(
-            vaultBalanceAfterBorrow,
+            vaultBalanceAfterFirstBorrow,
             vaultBalanceBeforeBorrow - borrowAmount,
             "Vault's balance of DAI should decrease after borrowing"
         );
-
         assertEq(
-            userDebtAfterBorrow,
-            userDebtBeforeBorrow + borrowAmount,
-            "User's debt should increase after borrowing"
+            userDebtAfterFirstBorrow,
+            borrowAmount,
+            "User's debt should match the borrowed amount"
         );
 
         // User borrows again
         vm.startPrank(user);
-        market.borrow(500 * 1e18);
+        market.borrow(additionalBorrowAmount);
         vm.stopPrank();
 
-        // Simulate 2000 blocks passing
-        vm.roll(block.number + 200);
+        uint256 userDebtAfterSecondBorrow = market.userTotalDebt(user);
+        uint256 userBalanceAfterSecondBorrow = dai.balanceOf(user);
+        uint256 vaultBalanceAfterSecondBorrow = dai.balanceOf(address(vault));
+        uint256 totalBorrowed = borrowAmount + additionalBorrowAmount;
 
-        uint256 userDebtBeforeRepay = market.userTotalDebt(user);
-        uint256 userBalanceBeforeRepay = dai.balanceOf(user);
-        uint256 vaultBalanceBeforeRepay = dai.balanceOf(address(vault));
-        uint256 userCollateralBalanceBeforeRepay = market
-            .userCollateralBalances(user, address(weth));
-
-        console.log("User debt before repay:", userDebtBeforeRepay);
-        console.log("User Balance before repay:", userBalanceBeforeRepay);
-        console.log("vault balance before repay:", vaultBalanceBeforeRepay);
-        console.log(
-            "user collateral balance before repay:",
-            userCollateralBalanceBeforeRepay
+        // Assert second borrow
+        assertEq(
+            userBalanceAfterSecondBorrow,
+            userBalanceAfterFirstBorrow + additionalBorrowAmount,
+            "User's balance of DAI should increase after second borrowing"
+        );
+        assertEq(
+            vaultBalanceAfterSecondBorrow,
+            vaultBalanceAfterFirstBorrow - additionalBorrowAmount,
+            "Vault's balance of DAI should decrease after second borrowing"
+        );
+        assertGt(
+            userDebtAfterSecondBorrow,
+            userDebtAfterFirstBorrow,
+            "User's debt should increase after second borrow"
         );
 
-        uint256 partialRepayment = userDebtBeforeRepay / 2;
+        // Partial repayment
+        uint256 partialRepayment = totalBorrowed / 2;
 
-        // User partially repays debt
         vm.startPrank(user);
         market.repay(partialRepayment);
         vm.stopPrank();
@@ -471,17 +453,22 @@ contract MarketTest is Test {
         uint256 userDebtAfterRepay = market.userTotalDebt(user);
         uint256 userBalanceAfterRepay = dai.balanceOf(user);
         uint256 vaultBalanceAfterRepay = dai.balanceOf(address(vault));
-        uint256 userCollateralBalanceAfterRepay = market.userCollateralBalances(
-            user,
-            address(weth)
-        );
 
-        console.log("User debt after repay:", userDebtAfterRepay);
-        console.log("User Balance after repay:", userBalanceAfterRepay);
-        console.log("vault balance after repay:", vaultBalanceAfterRepay);
-        console.log(
-            "user collateral balance after repay:",
-            userCollateralBalanceAfterRepay
+        // Assert partial repayment
+        assertEq(
+            userDebtAfterRepay,
+            userDebtAfterSecondBorrow - partialRepayment,
+            "User's debt should decrease by the repaid amount"
+        );
+        assertEq(
+            userBalanceAfterRepay,
+            userBalanceAfterSecondBorrow - partialRepayment,
+            "User's balance of DAI should decrease by the repaid amount"
+        );
+        assertEq(
+            vaultBalanceAfterRepay,
+            vaultBalanceAfterSecondBorrow + partialRepayment,
+            "Vault's balance of DAI should increase by the repaid amount"
         );
     }
 }

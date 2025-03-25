@@ -540,32 +540,31 @@ contract Market is ReentrancyGuard {
         uint256 totalBorrowed = totalBorrows; // Total amount of borrows in the system
         uint256 totalSupply = vaultContract.totalAssets(); // Total amount of assets in the system
 
-        // If there are no borrows, no interest accrual is required
-        if (totalBorrowed == 0) {
+        // Prevent division by zero
+        if (totalBorrowed == 0 || totalSupply == 0) {
             return;
         }
-
-        // Prevent division by zero
-        if (totalSupply == 0) return;
 
         // Store the current global borrow index before the update
         uint256 previousGlobalBorrowIndex = globalBorrowIndex;
 
-        // Calculate the interest accrued since the last update
-        uint256 interestAccruedSinceLastUpdate = (totalBorrows *
-            previousGlobalBorrowIndex) / 1e18;
+        // Get the current dynamic borrow rate (based on utilization rate)
+        uint256 dynamicBorrowRate = interestRateModel.getDynamicBorrowRate(); // This is already based on utilization
 
-        // Calculate the new global borrow index (using the updated values)
-        uint256 newGlobalBorrowIndex = ((totalBorrows +
-            interestAccruedSinceLastUpdate) * 1e18) / totalSupply;
+        // Calculate the interest accrued as a function of utilization-driven rate
+        uint256 interestAccrued = (dynamicBorrowRate * totalBorrowed) / 1e18;
 
-        // If the new index equals the previous index, avoid underflow
-        if (newGlobalBorrowIndex <= previousGlobalBorrowIndex) {
+        // Calculate the new global borrow index (previousIndex + increment)
+        uint256 newGlobalBorrowIndex = previousGlobalBorrowIndex +
+            ((previousGlobalBorrowIndex * interestAccrued) / totalSupply);
+
+        // If the new index equals the previous index, skip updating
+        if (newGlobalBorrowIndex == previousGlobalBorrowIndex) {
             return;
         }
 
         // Update the total interest accrued for the platform
-        lastAccruedInterest += interestAccruedSinceLastUpdate;
+        lastAccruedInterest += interestAccrued;
 
         // Set the new global borrow index
         globalBorrowIndex = newGlobalBorrowIndex;

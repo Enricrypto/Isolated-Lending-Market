@@ -85,7 +85,7 @@ contract InterestRateModel {
         return (totalBorrows * 1e18) / totalAssets;
     }
 
-    // Calculate the dynamic borrow rate per year (based on Jump-Rate model)
+    // Calculate the dynamic borrow rate (based on Jump-Rate model)
     function getDynamicBorrowRate() public view returns (uint256) {
         uint256 utilization = getUtilizationRate();
 
@@ -94,6 +94,7 @@ contract InterestRateModel {
             return baseRate + (utilization * slope1) / 1e18;
         } else {
             // Above optimal utilization: use slope2 (steep increase)
+            // The "kink" occurs at the point where the utilization rate exceeds optimalUtilization.
             uint256 excessUtilization = utilization - optimalUtilization;
             return
                 baseRate +

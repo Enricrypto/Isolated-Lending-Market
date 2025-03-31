@@ -423,7 +423,7 @@ contract Market is ReentrancyGuard {
             simulatedDebt,
             currentCollateralValue
         );
-        require(healthFactor >= 1e18, "Health factor too low");
+        require(healthFactor >= 1e18, "Health factor too low after borrowing");
 
         // Call Vault's adminBorrowFunction to withdraw funds to Market contract
         vaultContract.adminBorrow(loanAmount);

@@ -538,7 +538,7 @@ contract MarketTest is Test {
         uint256 liquidationThreshold = 80;
         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
         uint256 depositAmount = 3 * 1e18; // 3 WETH
-        uint256 borrowAmount = 4725 * 1e18; // 4700 DAI
+        uint256 borrowAmount = 4725.225 * 1e18; // 4700 DAI
         uint256 additionalBorrowAmount = 500 * 1e18; // Additional borrow: 500 DAI
 
         // Lender deposits DAI into the vault
@@ -587,6 +587,12 @@ contract MarketTest is Test {
         // User borrows for the first time
         vm.startPrank(user);
         market.borrow(borrowAmount);
+        uint256 healthFactor1 = market.getHealthFactor(
+            user,
+            borrowAmount,
+            collateralValueInUSD
+        );
+        console.log("health Factor 1:", healthFactor1);
         vm.stopPrank();
 
         uint256 userDebtAfterFirstBorrow = market.userTotalDebt(user);

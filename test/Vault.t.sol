@@ -73,11 +73,15 @@ contract VaultTest is Test {
         // Add a collateral to lending market
         uint256 ltv = 75;
 
+        // Add a liquidation threshold
+        uint256 liquidationThreshold = 80;
+
         vm.startPrank(address(this)); // Start impersonating test contract
         market.addCollateralToken(
             address(weth),
             address(wethPriceAddress),
-            ltv
+            ltv,
+            liquidationThreshold
         );
         vm.stopPrank();
 

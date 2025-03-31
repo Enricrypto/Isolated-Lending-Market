@@ -19,10 +19,12 @@ contract MarketTest is Test {
     IERC20 public dai; // testing with DAI as the loan asset
     IERC20 public weth; // collateral asset
     address public wethPrice;
+    address public daiPrice;
 
     address daiAddress = 0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1; // DAI address on Arbitrum
     address wethAddress = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH address on Arbitrum
     address wethPriceAddress = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // WETH price feed address on Arbitrum
+    address daiPriceAddress = 0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9; // DAI price feed address on Arbitrum; // DAI address on Arbitrum
 
     uint256 public initialDeposit = 5000 * 1e18; // 5000 tokens
     uint256 public initialBalance = 10000 * 1e18; // 10000 DAI for user
@@ -38,7 +40,10 @@ contract MarketTest is Test {
         // Initialize the DAI and WETH instance
         dai = IERC20(daiAddress);
         weth = IERC20(wethAddress);
+
+        // Initialize price feed addresses
         wethPrice = wethPriceAddress;
+        daiPrice = daiPriceAddress;
 
         // InterestRateModel parameters
         uint256 baseRate = 0.02e18; // 2% base rate
@@ -116,11 +121,17 @@ contract MarketTest is Test {
     // Test Add Collateral Token to market
     function testAddCollateralToken() public {
         address collateralToken = address(weth);
-        address priceFeed = address(wethPrice);
+        address priceFeed = wethPrice;
         uint256 ltvRatio = 75; // 75% LTV Ratio
+        uint256 liquidationThreshold = 80; // 80% Liquidation threshold
 
         vm.startPrank(address(this)); // Contract owner adds collateral and set LTV
-        market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
+        market.addCollateralToken(
+            collateralToken,
+            priceFeed,
+            ltvRatio,
+            liquidationThreshold
+        );
         vm.stopPrank();
 
         // Assert that the supportedCollateral mapping is now supported
@@ -135,10 +146,16 @@ contract MarketTest is Test {
         address collateralToken = address(weth);
         address priceFeed = address(wethPrice);
         uint256 ltvRatio = 75;
+        uint256 liquidationThreshold = 80;
 
         // Add collateral token
         vm.startPrank(address(this));
-        market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
+        market.addCollateralToken(
+            collateralToken,
+            priceFeed,
+            ltvRatio,
+            liquidationThreshold
+        );
         vm.stopPrank();
 
         // Pause collateral deposits
@@ -157,10 +174,16 @@ contract MarketTest is Test {
         address collateralToken = address(weth);
         address priceFeed = address(wethPrice);
         uint256 ltvRatio = 75;
+        uint256 liquidationThreshold = 80;
 
         // Add collateral token
         vm.startPrank(address(this));
-        market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
+        market.addCollateralToken(
+            collateralToken,
+            priceFeed,
+            ltvRatio,
+            liquidationThreshold
+        );
         vm.stopPrank();
 
         // Pause collateral deposits
@@ -197,10 +220,16 @@ contract MarketTest is Test {
         address collateralToken = address(weth);
         address priceFeed = address(wethPrice);
         uint256 ltvRatio = 75;
+        uint256 liquidationThreshold = 80;
 
         // add Collateral Token
         vm.startPrank(address(this));
-        market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
+        market.addCollateralToken(
+            collateralToken,
+            priceFeed,
+            ltvRatio,
+            liquidationThreshold
+        );
         vm.stopPrank();
 
         // Pause collateral deposits
@@ -235,12 +264,18 @@ contract MarketTest is Test {
         address collateralToken = address(weth);
         address priceFeed = address(wethPrice);
         uint256 ltvRatio = 75;
+        uint256 liquidationThreshold = 80;
         uint256 depositAmount = 1000 * 1e18;
         uint256 withdrawAmount = 500 * 1e18;
 
         // Add collateral token
         vm.startPrank(address(this));
-        market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
+        market.addCollateralToken(
+            collateralToken,
+            priceFeed,
+            ltvRatio,
+            liquidationThreshold
+        );
         vm.stopPrank();
 
         // Ensure deposits works
@@ -269,9 +304,11 @@ contract MarketTest is Test {
     }
 
     function testBorrow() public {
+        // address loanAsset = address(dai);
         address collateralToken = address(weth);
         address priceFeed = address(wethPrice);
         uint256 ltvRatio = 75;
+        uint256 liquidationThreshold = 80;
         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
         uint256 depositAmount = 3 * 1e18; // 3 WETH
         uint256 borrowAmount1 = 300 * 1e18; // First borrow: 300 DAI
@@ -286,7 +323,12 @@ contract MarketTest is Test {
 
         // Add collateral token to the market
         vm.startPrank(address(this));
-        market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
+        market.addCollateralToken(
+            collateralToken,
+            priceFeed,
+            ltvRatio,
+            liquidationThreshold
+        );
         vm.stopPrank();
 
         // User deposits collateral into the market
@@ -364,8 +406,9 @@ contract MarketTest is Test {
 
     function testRepay() public {
         address collateralToken = address(weth);
-        address priceFeed = address(wethPrice);
+        address priceFeed = wethPrice;
         uint256 ltvRatio = 75;
+        uint256 liquidationThreshold = 80;
         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
         uint256 depositAmount = 3 * 1e18; // 3 WETH
         uint256 borrowAmount = 2000 * 1e18; // 2000 DAI
@@ -378,18 +421,34 @@ contract MarketTest is Test {
 
         // Add collateral token to the market
         vm.startPrank(address(this));
-        market.addCollateralToken(collateralToken, priceFeed, ltvRatio);
+        market.addCollateralToken(
+            collateralToken,
+            priceFeed,
+            ltvRatio,
+            liquidationThreshold
+        );
         vm.stopPrank();
 
         // User deposits collateral into the market
         vm.startPrank(user);
         market.depositCollateral(collateralToken, depositAmount);
+        uint256 collateralValue = market.getUserTotalCollateralValue(user);
+        console.log("Collateral value:", collateralValue);
         vm.stopPrank();
 
         // Initial borrowing checks
         uint256 userBalanceBeforeBorrow = dai.balanceOf(user);
         uint256 vaultBalanceBeforeBorrow = dai.balanceOf(address(vault));
 
+        console.log("borrowAmount:", borrowAmount);
+        uint256 simulatedDebt = market._getUserTotalDebt(user) + borrowAmount;
+        console.log("simulated debt:", simulatedDebt);
+        uint256 healthFactor = market.getHealthFactor(
+            user,
+            simulatedDebt,
+            collateralValue
+        );
+        console.log("health factor:", healthFactor);
         // User borrows for the first time
         vm.startPrank(user);
         market.borrow(borrowAmount);

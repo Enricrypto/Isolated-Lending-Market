@@ -83,6 +83,12 @@ contract Market is ReentrancyGuard {
         address token,
         uint256 amount
     );
+    event Liquidation(
+        address indexed user,
+        address indexed liquidator,
+        uint256 debtToCover,
+        uint256 collateralToLiquidate
+    );
 
     constructor(
         address _vaultContract,
@@ -629,18 +635,11 @@ contract Market is ReentrancyGuard {
         for (uint256 i = 0; i < collateralTokenList.length; i++) {
             address token = collateralTokenList[i];
             uint256 userBalance = userCollateralBalances[user][token];
-            uint256 ltv = ltvRatios[token];
-            uint256 liquidationThreshold = liquidationThresholds[token]; // Liquidation threshold
 
             // Calculate the collateral value in the native asset's value (USD, for example)
             uint256 collateralValue = _getTokenValueInUSD(token, userBalance); // Adjust for decimals
 
-            // Adjust the collateral value using both LTV and the liquidation threshold
-            uint256 adjustedCollateralValue = (collateralValue *
-                ltv *
-                liquidationThreshold) / (100 * 100); // Adjust by LTV and liquidation threshold
-            // Add to the total collateral value
-            totalCollateralValue += adjustedCollateralValue;
+            totalCollateralValue += collateralValue;
         }
 
         return totalCollateralValue;
@@ -712,7 +711,7 @@ contract Market is ReentrancyGuard {
         uint256 ltv = ltvRatios[collateralToken];
 
         // Calculate the USD value of the withdrawing collateral
-        uint256 collateralValue = _getTokenValueInUSD(token, amount);
+        uint256 collateralValue = _getTokenValueInUSD(collateralToken, amount);
         uint256 withdrawalValue = (collateralValue * ltv) / 100;
 
         // Compute new borrowing power after withdrawal

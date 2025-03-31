@@ -530,4 +530,83 @@ contract MarketTest is Test {
             "Vault's balance of DAI should increase by the repaid amount"
         );
     }
+
+    function testLiquidate() public {
+        address collateralToken = address(weth);
+        address priceFeed = wethPrice;
+        uint256 ltvRatio = 75;
+        uint256 liquidationThreshold = 80;
+        uint256 lentAmount = 5000 * 1e18; // 5000 DAI
+        uint256 depositAmount = 3 * 1e18; // 3 WETH
+        uint256 borrowAmount = 3500 * 1e18; // 4000 DAI
+        uint256 additionalBorrowAmount = 500 * 1e18; // Additional borrow: 500 DAI
+
+        // Lender deposits DAI into the vault
+        vm.startPrank(lender);
+        vault.deposit(lentAmount, lender);
+        vm.stopPrank();
+
+        // Add collateral token to the market
+        vm.startPrank(address(this));
+        market.addCollateralToken(
+            collateralToken,
+            priceFeed,
+            ltvRatio,
+            liquidationThreshold
+        );
+        vm.stopPrank();
+
+        // User deposits collateral into the market
+        vm.startPrank(user);
+        market.depositCollateral(collateralToken, depositAmount);
+        uint256 collateralValue = market.getUserTotalCollateralValue(user);
+        console.log("Collateral value:", collateralValue);
+        uint256 userBalance = market.userCollateralBalances(
+            user,
+            collateralToken
+        );
+        console.log("User Balance:", userBalance);
+        uint256 collateralValueInUSD = market.getTokenValueInUSD(
+            collateralToken,
+            depositAmount
+        );
+        console.log("collateral value in USD:", collateralValueInUSD);
+        int256 tokenPrice = priceOracle.getLatestPrice(collateralToken);
+        console.log("token price:", tokenPrice);
+        uint256 totalBorrowingPower = market._getUserTotalBorrowingPower(user);
+        console.log("total borrowing power:", totalBorrowingPower);
+        uint256 maxBorrowingPower = market._getMaxBorrowingPower(user);
+        console.log("max borrowing power:", maxBorrowingPower);
+        vm.stopPrank();
+
+        // Initial borrowing checks
+        uint256 userBalanceBeforeBorrow = dai.balanceOf(user);
+        uint256 vaultBalanceBeforeBorrow = dai.balanceOf(address(vault));
+
+        // User borrows for the first time
+        vm.startPrank(user);
+        market.borrow(borrowAmount);
+        vm.stopPrank();
+
+        uint256 userDebtAfterFirstBorrow = market.userTotalDebt(user);
+        uint256 userBalanceAfterFirstBorrow = dai.balanceOf(user);
+        uint256 vaultBalanceAfterFirstBorrow = dai.balanceOf(address(vault));
+
+        // Assert first borrow
+        assertEq(
+            userBalanceAfterFirstBorrow,
+            userBalanceBeforeBorrow + borrowAmount,
+            "User's balance of DAI should increase after borrowing"
+        );
+        assertEq(
+            vaultBalanceAfterFirstBorrow,
+            vaultBalanceBeforeBorrow - borrowAmount,
+            "Vault's balance of DAI should decrease after borrowing"
+        );
+        assertEq(
+            userDebtAfterFirstBorrow,
+            borrowAmount,
+            "User's debt should match the borrowed amount"
+        );
+    }
 }

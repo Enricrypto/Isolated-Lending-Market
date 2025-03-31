@@ -625,8 +625,7 @@ contract Market is ReentrancyGuard {
         return totalBorrowingPower;
     }
 
-    // function calculates the total value of the user's collateral, but it DOESN'T consider how much
-    // of it can be borrowed based on the LTV ratio.
+    // function calculates the total value of the user's collateral in USD
     function _getUserTotalCollateralValue(
         address user
     ) internal view returns (uint256) {
@@ -657,30 +656,40 @@ contract Market is ReentrancyGuard {
         uint256 userDebt, // User debt after borrowing or other operations
         uint256 userCollateralValue // collateral value (in USD)
     ) internal view returns (uint256) {
-        // If userCollateralValue is 0, use the current total collateral value
-        uint256 collateralValue = userCollateralValue > 0
-            ? userCollateralValue
-            : _getUserTotalCollateralValue(user); // Get the current collateral value in USD
+        uint256 totalCollateralValue = 0;
 
-        // Use userDebt if provided, otherwise fallback to total debt
-        uint256 totalDebt = userDebt > 0 ? userDebt : _getUserTotalDebt(user); // Get the current total debt
+        // Loop through all collateral tokens the user has deposited
+        for (uint256 i = 0; i < collateralTokenList.length; i++) {
+            address token = collateralTokenList[i];
 
-        // If the user has no debt, their health factor is effectively infinite (no risk of liquidation)
-        if (totalDebt == 0) {
-            return type(uint256).max; // Return the maximum possible value (essentially infinite)
+            uint256 userBalance = userCollateralBalances[user][token];
+            if (userBalance == 0) continue; // Skip tokens with no deposit
+
+            uint256 collateralValue = _getTokenValueInUSD(token, userBalance); // Convert token amount to USD
+            uint256 liquidationThreshold = liquidationThresholds[token]; // Get liquidation threshold (e.g., 80 for 80%)
+
+            // Weighted collateral value based on its liquidation threshold
+            totalCollateralValue +=
+                (collateralValue * liquidationThreshold) /
+                100;
         }
 
-        // Calculate the health factor: (Total Collateral Value / Total Debt) scaled by 1e18
-        return (collateralValue * 1e18) / totalDebt;
+        uint256 totalDebt = userDebt > 0 ? userDebt : _getUserTotalDebt(user);
+        if (totalDebt == 0) {
+            return type(uint256).max; // Infinite health if no debt
+        }
+
+        // Compute the final health factor
+        return (totalCollateralValue * 1e18) / totalDebt;
     }
 
     // View function to expose health factor calculation
     function getHealthFactor(
         address user,
-        uint256 simulatedDebt, // Simulated debt after borrowing or other operations
-        uint256 simulatedCollateralValue // Simulated collateral value (in USD)
+        uint256 userDebt, // debt after borrowing or other operations
+        uint256 userCollateralValue //collateral value (in USD)
     ) public view returns (uint256) {
-        return _getHealthFactor(user, simulatedDebt, simulatedCollateralValue);
+        return _getHealthFactor(user, userDebt, userCollateralValue);
     }
 
     // Helper function to ensure that withdrawing collateral does not leave the user undercollateralized.

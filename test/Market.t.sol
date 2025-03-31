@@ -538,7 +538,7 @@ contract MarketTest is Test {
         uint256 liquidationThreshold = 80;
         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
         uint256 depositAmount = 3 * 1e18; // 3 WETH
-        uint256 borrowAmount = 3500 * 1e18; // 4000 DAI
+        uint256 borrowAmount = 4725 * 1e18; // 4700 DAI
         uint256 additionalBorrowAmount = 500 * 1e18; // Additional borrow: 500 DAI
 
         // Lender deposits DAI into the vault
@@ -561,11 +561,6 @@ contract MarketTest is Test {
         market.depositCollateral(collateralToken, depositAmount);
         uint256 collateralValue = market.getUserTotalCollateralValue(user);
         console.log("Collateral value:", collateralValue);
-        uint256 userBalance = market.userCollateralBalances(
-            user,
-            collateralToken
-        );
-        console.log("User Balance:", userBalance);
         uint256 collateralValueInUSD = market.getTokenValueInUSD(
             collateralToken,
             depositAmount
@@ -577,6 +572,12 @@ contract MarketTest is Test {
         console.log("total borrowing power:", totalBorrowingPower);
         uint256 maxBorrowingPower = market._getMaxBorrowingPower(user);
         console.log("max borrowing power:", maxBorrowingPower);
+        uint256 healthFactor = market.getHealthFactor(
+            user,
+            borrowAmount,
+            collateralValueInUSD
+        );
+        console.log("health Factor:", healthFactor);
         vm.stopPrank();
 
         // Initial borrowing checks

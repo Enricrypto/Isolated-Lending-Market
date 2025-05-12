@@ -32,7 +32,6 @@ contract Market is ReentrancyGuard {
     uint256 public globalBorrowIndex;
     uint256 public lastAccruedInterest;
     uint256 public lastAccrualTimestamp; // used to calculate interest rates based on time elapsed
-    uint256 public protocolAccrued;
 
     // Mapping to track the supported collateral tokens
     mapping(address => bool) public supportedCollateralTokens;
@@ -102,7 +101,6 @@ contract Market is ReentrancyGuard {
         totalBorrows = 0;
         globalBorrowIndex = 1e18; // Set starting index value
         lastAccruedInterest = 0;
-        protocolAccrued = 0;
         owner = msg.sender;
     }
 
@@ -236,7 +234,7 @@ contract Market is ReentrancyGuard {
     ) external nonReentrant {
         // Update borrow index before allowing any collateral-related changes,
         // ensure interest is accrued propoerly before chanhging user's position.
-        _updateInterestGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
         // Ensure the collateral token is supported (only whitelisted tokens).
         require(
             supportedCollateralTokens[collateralToken],
@@ -304,7 +302,7 @@ contract Market is ReentrancyGuard {
         uint256 amount
     ) external nonReentrant {
         // Update borrow index before allowing any collateral-related changes
-        _updateInterestGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
 
         require(amount > 0, "Withdraw amount must be greater than zero");
 
@@ -372,7 +370,7 @@ contract Market is ReentrancyGuard {
         require(loanAmount > 0, "Loan amount must be greater than zero");
 
         // Make sure the global borrow index reflects the latest state of the interest rate before any borrowing occurs
-        _updateInterestGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
 
         // Ensure the vault has enough liquidity to cover the loan amount
         // No borrower can borrow more than what the vault can actually lend, preventing over-borrowing
@@ -427,7 +425,7 @@ contract Market is ReentrancyGuard {
         require(repayAmount > 0, "Repayment amount must be greater than zero");
 
         // Ensure index is up to date before calculating anything related to the user's debt
-        _updateInterestGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
 
         // Ensure the repay amount covers at least the interest accrued
         uint256 interestAccrued = _borrowerInterestAccrued(msg.sender);
@@ -513,7 +511,7 @@ contract Market is ReentrancyGuard {
         address user // The borrower being liquidated
     ) external {
         // Ensure index is up to date before calculating anything related to the user's debt
-        _updateInterestGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
 
         // Step 1: Validate and calculate liquidation parameters
         (
@@ -634,7 +632,7 @@ contract Market is ReentrancyGuard {
         );
 
         // Update global borrow index to ensure interest rates are up-to-date
-        _updateInterestGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
 
         // Get the user's current borrowing power
         uint256 totalBorrowingPower = _getUserTotalBorrowingPower(user);
@@ -688,7 +686,7 @@ contract Market is ReentrancyGuard {
     // Helper function to calculate the maximum borrowing capacity of a user
     function _maxBorrowingPower(address user) internal returns (uint256) {
         // Update the global borrow index to ensure the interest rates are up to date
-        _updateInterestGlobalBorrowIndex();
+        _updateGlobalBorrowIndex();
 
         uint256 borrowingPower = _getUserTotalBorrowingPower(user);
 
@@ -726,7 +724,7 @@ contract Market is ReentrancyGuard {
     }
 
     // Function to update the global borrow index and the total interest accrued for the whole market
-    function _updateInterestGlobalBorrowIndex() private {
+    function _updateGlobalBorrowIndex() private {
         // Get the current timestamp
         uint256 currentTimestamp = block.timestamp;
 
@@ -762,13 +760,6 @@ contract Market is ReentrancyGuard {
         uint256 effectiveRate = (dynamicBorrowRate * timeElapsed) /
             secondsPerYear;
 
-        // Calculate total interest accrued
-        uint256 interestAccrued = ((effectiveRate * totalBorrowed) / 1e18);
-
-        // Calculate fee portion
-        uint256 protocolFeeRate = marketParams.protocolFeeRate;
-        uint256 feePortion = (interestAccrued * protocolFeeRate) / 1e18;
-
         // Calculate the new global borrow index
         uint256 newGlobalBorrowIndex = (previousGlobalBorrowIndex *
             (1e18 + effectiveRate)) / 1e18;
@@ -778,9 +769,6 @@ contract Market is ReentrancyGuard {
             lastAccrualTimestamp = currentTimestamp; // Still update timestamp
             return;
         }
-
-        // Add fee to protocol interests accrued
-        protocolAccrued += feePortion;
 
         // Set the new global borrow index
         globalBorrowIndex = newGlobalBorrowIndex;
@@ -1052,8 +1040,8 @@ contract Market is ReentrancyGuard {
         return _maxBorrowingPower(user);
     }
 
-    function updateInterestGlobalBorrowIndex() external {
-        _updateInterestGlobalBorrowIndex();
+    function updateGlobalBorrowIndex() external {
+        _updateGlobalBorrowIndex();
     }
 
     function getTokenValueInUSD(

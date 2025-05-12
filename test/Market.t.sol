@@ -423,7 +423,7 @@ contract MarketTest is Test {
         console.log("Dynamic borrow rate:", dynamicBorrowRate);
 
         // Update interest and global borrow index without user interaction
-        market.updateInterestGlobalBorrowIndex();
+        market.updateGlobalBorrowIndex();
 
         uint256 globalBorrowIndex2 = market.globalBorrowIndex();
         console.log("gobal borrow index 2", globalBorrowIndex2);
@@ -571,7 +571,7 @@ contract MarketTest is Test {
         console.log("Before global borrow index:", beforeGlobalBorrowIndex);
 
         vm.startPrank(user);
-        market.updateInterestGlobalBorrowIndex();
+        market.updateGlobalBorrowIndex();
 
         uint256 afterGlobalBorrowIndex = market.globalBorrowIndex();
         console.log("After global borrow index:", afterGlobalBorrowIndex);
@@ -827,7 +827,7 @@ contract MarketTest is Test {
         uint256 timeToAdvance = 1 days;
         vm.warp(block.timestamp + timeToAdvance);
 
-        market.updateInterestGlobalBorrowIndex();
+        market.updateGlobalBorrowIndex();
 
         uint256 afterGlobalBorrowIndex = market.globalBorrowIndex();
         console.log("After global borrow index:", afterGlobalBorrowIndex);

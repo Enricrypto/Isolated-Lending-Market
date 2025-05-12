@@ -765,10 +765,9 @@ contract Market is ReentrancyGuard {
         // Calculate total interest accrued
         uint256 interestAccrued = ((effectiveRate * totalBorrowed) / 1e18);
 
-        // Split into lender portion and protocol fee
+        // Calculate fee portion
         uint256 protocolFeeRate = marketParams.protocolFeeRate;
         uint256 feePortion = (interestAccrued * protocolFeeRate) / 1e18;
-        uint256 lenderPortion = interestAccrued - feePortion;
 
         // Calculate the new global borrow index
         uint256 newGlobalBorrowIndex = (previousGlobalBorrowIndex *

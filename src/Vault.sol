@@ -112,7 +112,7 @@ contract Vault is ERC4626, ReentrancyGuard {
         // Retrieves the idle (not lent) assets in the Vault.
         uint256 idleAssets = totalIdle();
 
-        // Adds the borrowed assets
+        // Adds the borrowed assets, including interests owed to the platform
         uint256 borrowedAssets = market._lentAssets();
 
         // Return the total assets including borrowed amounts

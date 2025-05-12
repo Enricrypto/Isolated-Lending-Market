@@ -86,6 +86,7 @@ contract InterestRateModel {
     }
 
     // Calculate the dynamic borrow rate (based on Jump-Rate model)
+    // Is an annualized rate (example 16% APR)
     function getDynamicBorrowRate() public view returns (uint256) {
         uint256 utilization = getUtilizationRate();
 

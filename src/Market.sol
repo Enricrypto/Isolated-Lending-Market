@@ -8,23 +8,31 @@ import "./PriceOracle.sol";
 import "./InterestRateModel.sol";
 
 contract Market is ReentrancyGuard {
-    address public owner; // Admin address
+    // Declare the struct to store market parameters
+    struct MarketParameters {
+        uint256 liquidationThreshold; // % at which liquidation occurs
+        uint256 liquidationPenalty; // Extra collateral taken during liquidation
+        uint256 maxLTV; // Max Loan-to-Value ratio
+        uint256 minHealthFactor; // Health Factor threshold for liquidation
+        uint256 closeFactor; // Max % of debt that can be liquidated in one transaction
+        uint256 protocolFeeRate; // Protocol's share of interest, e.g., 1e17 for 10%
+    }
+
+    // Store the current market parameters
+    MarketParameters public marketParams;
+
+    // Other global variables
+    address public protocolTreasury; // Address to capture protocol fees
+    address public owner;
     Vault public vaultContract;
     PriceOracle public priceOracle;
     InterestRateModel public interestRateModel;
     IERC20 public loanAsset;
-
-    // Tracks total borrowed amount for the loan asset
-    uint256 public totalBorrows;
-
-    // Total Interest Accrued
+    uint256 public totalBorrows; // Tracks the platform's total principal outstanding
+    uint256 public globalBorrowIndex;
     uint256 public lastAccruedInterest;
-
-    // Global borrow index
-    uint256 public globalBorrowIndex; // Start with an initial index value, no interest has accrued yet.
-
-    // Track the last time where the global borrow index was updated
-    uint256 public lastGlobalUpdateTime;
+    uint256 public lastAccrualTimestamp; // used to calculate interest rates based on time elapsed
+    uint256 public protocolAccrued;
 
     // Mapping to track the supported collateral tokens
     mapping(address => bool) public supportedCollateralTokens;
@@ -39,27 +47,17 @@ contract Market is ReentrancyGuard {
     // Mapping to track the collateral tokens a user has deposited
     mapping(address => address[]) public userCollateralAssets;
 
-    // Mapping to track total debt of each user
+    // Mapping to track total debt of each user (only principal)
     mapping(address => uint256) public userTotalDebt;
 
     // Track the last updated index of a user
     mapping(address => uint256) public lastUpdatedIndex;
 
-    // Mapping to store the LTV ratio for each collateral token
-    mapping(address => uint256) public ltvRatios;
-
-    // Mapping to store the liquidation threshold for each collateral token
-    mapping(address => uint256) public liquidationThresholds;
-
     // List to track all collateral tokens
     address[] public collateralTokenList;
 
     // Events
-    event CollateralTokenAdded(
-        address indexed collateralToken,
-        uint256 ltv,
-        uint256 threshold
-    );
+    event CollateralTokenAdded(address indexed collateralToken);
     event CollateralDepositsPaused(address indexed collateralToken);
     event CollateralDepositsResumed(address indexed collateralToken);
     event CollateralTokenRemoved(address indexed collateralToken);
@@ -73,8 +71,6 @@ contract Market is ReentrancyGuard {
         address indexed collateralToken,
         uint256 amount
     );
-    event LTVRatioSet(address indexed collateralToken, uint256 ltvRatio);
-    event LiquidationThresholdSet(address collateralToken, uint256 threshold);
     event Borrow(address indexed user, uint256 loanAmount);
     event Repay(address indexed user, uint256 amountRepaid);
     event CollateralLiquidated(
@@ -87,23 +83,26 @@ contract Market is ReentrancyGuard {
         address indexed user,
         address indexed liquidator,
         uint256 debtToCover,
-        uint256 collateralToLiquidate
+        uint256 collateralToLiquidate,
+        uint256 remainingToSeizeUsd
     );
 
     constructor(
+        address _protocolTreasury,
         address _vaultContract,
         address _priceOracle,
         address _interestRateModel,
         address _loanAsset
     ) {
+        protocolTreasury = _protocolTreasury;
         vaultContract = Vault(_vaultContract);
         priceOracle = PriceOracle(_priceOracle);
         interestRateModel = InterestRateModel(_interestRateModel);
         loanAsset = IERC20(_loanAsset);
         totalBorrows = 0;
         globalBorrowIndex = 1e18; // Set starting index value
-        lastGlobalUpdateTime = block.timestamp;
         lastAccruedInterest = 0;
+        protocolAccrued = 0;
         owner = msg.sender;
     }
 
@@ -115,46 +114,34 @@ contract Market is ReentrancyGuard {
         _;
     }
 
-    // Function to set the LTV ratio for a collateral token (only admin)
-    function _setLTVRatio(
-        address collateralToken,
-        uint256 ltv
-    ) internal onlyOwner {
-        require(
-            supportedCollateralTokens[collateralToken],
-            "Token not supported"
-        );
-        require(ltv > 0 && ltv <= 100, "Invalid LTV ratio"); // Ensure LTV is between 1-100%
+    // Function to update market parameters (only callable by owner)
+    function setMarketParameters(
+        uint256 _liquidationThreshold,
+        uint256 _liquidationPenalty,
+        uint256 _maxLTV,
+        uint256 _minHealthFactor,
+        uint256 _closeFactor, // Max % of a loan that can be liquidated at once
+        uint256 _protocolFeeRate
+    ) external onlyOwner {
+        require(_liquidationThreshold <= 1e18, "Threshold too high");
+        require(_liquidationPenalty <= 1e18, "Penalty too high");
+        require(_maxLTV <= 1e18, "LTV too high");
+        require(_minHealthFactor >= 1e18, "Health factor must be >= 1");
 
-        ltvRatios[collateralToken] = ltv;
-
-        emit LTVRatioSet(collateralToken, ltv);
-    }
-
-    function _setLiquidationThreshold(
-        address collateralToken,
-        uint256 threshold
-    ) internal {
-        require(
-            supportedCollateralTokens[collateralToken],
-            "Token not supported"
-        );
-        require(
-            threshold > 0 && threshold <= 100,
-            "Invalid liquidation threshold"
-        );
-
-        liquidationThresholds[collateralToken] = threshold;
-
-        emit LiquidationThresholdSet(collateralToken, threshold);
+        marketParams = MarketParameters({
+            liquidationThreshold: _liquidationThreshold,
+            liquidationPenalty: _liquidationPenalty,
+            maxLTV: _maxLTV,
+            minHealthFactor: _minHealthFactor,
+            closeFactor: _closeFactor,
+            protocolFeeRate: _protocolFeeRate
+        });
     }
 
     // Function to add a collateral token to the market
     function addCollateralToken(
         address collateralToken,
-        address priceFeed,
-        uint256 ltv,
-        uint256 liquidationThreshold
+        address priceFeed
     ) external onlyOwner {
         require(
             collateralToken != address(0),
@@ -165,10 +152,6 @@ contract Market is ReentrancyGuard {
             "Collateral token already added"
         );
         require(priceFeed != address(0), "Invalid price feed address");
-        require(
-            liquidationThreshold >= ltv,
-            "Liquidation threshold must be >= LTV"
-        );
 
         // Mark the token as supported
         supportedCollateralTokens[collateralToken] = true;
@@ -177,13 +160,7 @@ contract Market is ReentrancyGuard {
         // Set the price feed for the collateral token in the PriceOracle
         priceOracle.addPriceFeed(collateralToken, priceFeed);
 
-        // Set LTV ratio using the existing function
-        _setLTVRatio(collateralToken, ltv);
-
-        // Set liquidation threshold
-        _setLiquidationThreshold(collateralToken, liquidationThreshold);
-
-        emit CollateralTokenAdded(collateralToken, ltv, liquidationThreshold);
+        emit CollateralTokenAdded(collateralToken);
     }
 
     // Function to pause deposits for a collateral token
@@ -226,7 +203,7 @@ contract Market is ReentrancyGuard {
             "Collateral still in use"
         );
 
-        // TO-DO: before removing collateral token, I'll need to make sure that no users are using token as collateral
+        // Before removing collateral token, I'll need to make sure that no users are using token as collateral
         // Check if any collateral of this token is still locked in the contract
         uint256 totalCollateralInContract = _getTotalCollateralLocked(
             collateralToken
@@ -237,7 +214,6 @@ contract Market is ReentrancyGuard {
         );
 
         supportedCollateralTokens[collateralToken] = false;
-        delete ltvRatios[collateralToken]; // Remove its LTV entry
 
         // Remove from collateralTokenList
         for (uint i = 0; i < collateralTokenList.length; i++) {
@@ -258,9 +234,10 @@ contract Market is ReentrancyGuard {
         address collateralToken,
         uint256 amount
     ) external nonReentrant {
-        // Update borrow index before allowing any collateral-related changes
+        // Update borrow index before allowing any collateral-related changes,
+        // ensure interest is accrued propoerly before chanhging user's position.
         _updateInterestGlobalBorrowIndex();
-        // Ensure the collateral token is supported
+        // Ensure the collateral token is supported (only whitelisted tokens).
         require(
             supportedCollateralTokens[collateralToken],
             "Collateral token not supported"
@@ -289,7 +266,9 @@ contract Market is ReentrancyGuard {
             simulatedNewCollateralValue
         );
 
-        // Ensure health factor is still safe (>= 1e18) after adding collateral
+        // Ensure health factor is still safe (>= 1e18) after adding collateral.
+        // Ensure's deposited token has value and is meaningful collateral
+        // Ensure's the user's position does not become liquidatable immediately after deposit.
         require(
             simulatedHealthFactor >= 1e18,
             "Health factor too low after adding collateral"
@@ -311,7 +290,7 @@ contract Market is ReentrancyGuard {
             userCollateralAssets[msg.sender].push(collateralToken);
         }
 
-        // If the user has an active borrow position, update their lastUpdatedIndex
+        // If the user has an active borrow position, update their lastUpdatedIndex for interest accounting
         if (userTotalDebt[msg.sender] > 0) {
             lastUpdatedIndex[msg.sender] = globalBorrowIndex;
         }
@@ -423,7 +402,7 @@ contract Market is ReentrancyGuard {
             simulatedDebt,
             currentCollateralValue
         );
-        require(healthFactor >= 1e18, "Health factor too low after borrowing");
+        require(healthFactor >= 1e18, "Health factor too low after");
 
         // Call Vault's adminBorrowFunction to withdraw funds to Market contract
         vaultContract.adminBorrow(loanAmount);
@@ -431,21 +410,14 @@ contract Market is ReentrancyGuard {
         // Transfer the loaned amount from the market to the user
         loanAsset.transfer(msg.sender, loanAmount);
 
-        // Adding new debt
-        if (userTotalDebt[msg.sender] == 0) {
-            // First-time borrower
-            userTotalDebt[msg.sender] = loanAmount;
-        } else {
-            // Existing borrower: Add new loan + interest accrued
-            uint256 interestAccrued = _borrowerInterestAccrued(msg.sender);
-            userTotalDebt[msg.sender] += loanAmount + interestAccrued;
-        }
-
-        // Update the borrower's last interaction index to the current global borrow index
-        lastUpdatedIndex[msg.sender] = globalBorrowIndex;
+        // Adding new debt (just principal)
+        userTotalDebt[msg.sender] += loanAmount;
 
         // Update the total borrows
         totalBorrows += loanAmount;
+
+        // Update the borrower's last interaction index to the current global borrow index
+        lastUpdatedIndex[msg.sender] = globalBorrowIndex;
 
         emit Borrow(msg.sender, loanAmount);
     }
@@ -467,16 +439,23 @@ contract Market is ReentrancyGuard {
         // Calculate the principal portion of the repayment
         uint256 principalRepayment = repayAmount - interestAccrued;
 
-        // Update the borrower's total debt and ensure it doesn't go negative
+        // Calculate protocol share (on the interest portion only)
+        uint256 protocolShare = (interestAccrued *
+            marketParams.protocolFeeRate) / 1e18;
+
+        // Net repayment to the vault after protocol fee (principal + lender share)
+        uint256 netRepayToVault = repayAmount - protocolShare;
+
+        // Update the borrower's total debt (including accrued interests) and ensure it doesn't go negative
         uint256 currentDebt = _getUserTotalDebt(msg.sender);
         require(repayAmount <= currentDebt, "Repayment exceeds debt");
+
+        // Simulate the new debt after repayment (subtract the repayment amount)
+        uint256 simulatedDebt = currentDebt - repayAmount;
 
         uint256 currentCollateralValue = _getUserTotalCollateralValue(
             msg.sender
         );
-
-        // Simulate the new debt after repayment (subtract the repayment amount)
-        uint256 simulatedDebt = currentDebt - repayAmount;
 
         // Simulate the new health factor after repayment
         uint256 simulatedHealthFactor = _getHealthFactor(
@@ -500,8 +479,15 @@ contract Market is ReentrancyGuard {
 
         require(success, "Transfer failed: insufficient allowance or balance");
 
-        // Call Vault's adminRepayFunction to return funds to the Vault
-        vaultContract.adminRepay(repayAmount);
+        // Pay the protocol fee (interest portion)
+        bool protocolSuccess = loanAsset.transfer(
+            protocolTreasury,
+            protocolShare
+        );
+        require(protocolSuccess, "Protocol fee transfer failed");
+
+        // Call Vault's adminRepayFunction to return funds to the Vault, excluding market fees
+        vaultContract.adminRepay(netRepayToVault);
 
         require(
             totalBorrows >= principalRepayment,
@@ -509,10 +495,13 @@ contract Market is ReentrancyGuard {
         );
 
         // Update total borrows (subtract only the principal portion)
-        totalBorrows -= principalRepayment;
+        if (principalRepayment > 0) {
+            require(totalBorrows >= principalRepayment, "Underflow");
+            totalBorrows -= principalRepayment;
+        }
 
-        // Update the borrower’s debt
-        userTotalDebt[msg.sender] -= repayAmount;
+        // Update the borrower’s debt and reduce only principal
+        userTotalDebt[msg.sender] -= principalRepayment;
 
         // Update the borrower's last updated index to the current global borrow index
         lastUpdatedIndex[msg.sender] = globalBorrowIndex;
@@ -521,74 +510,34 @@ contract Market is ReentrancyGuard {
     }
 
     function liquidate(
-        address user, // The borrower being liquidated
-        address[] memory collateralTokens // Array of collateral tokens to liquidate (optional)
+        address user // The borrower being liquidated
     ) external {
-        // Get the user's total debt and collateral value
-        uint256 totalDebt = _getUserTotalDebt(user);
-        uint256 totalCollateral = _getUserTotalCollateralValue(user);
+        // Ensure index is up to date before calculating anything related to the user's debt
+        _updateInterestGlobalBorrowIndex();
 
-        uint256 healthFactor = _getHealthFactor(
+        // Step 1: Validate and calculate liquidation parameters
+        (
+            uint256 debtToCover,
+            uint256 collateralToLiquidateUsd
+        ) = _validateAndCalculateLiquidation(user);
+
+        // Step 2: Process repayment by liquidator
+        _processLiquidatorRepayment(user, msg.sender, debtToCover);
+
+        // Step 3: Seize collateral from the borrower
+        (
+            uint256 totalLiquidated,
+            uint256 remainingToSeizeUsd
+        ) = _seizeCollateral(user, msg.sender, collateralToLiquidateUsd);
+
+        // Emit liquidation event
+        emit Liquidation(
             user,
-            totalDebt,
-            totalCollateral
+            msg.sender,
+            debtToCover,
+            totalLiquidated,
+            remainingToSeizeUsd
         );
-        require(healthFactor < 1e18, "User not eligible for liquidation");
-
-        // Calculate the target debt after liquidation (health factor >= 1.1)
-        uint256 safeHealthFactor = 1.1e18;
-        uint256 targetDebt = (totalCollateral * 1e18) / safeHealthFactor;
-
-        uint256 debtToCover = totalDebt - targetDebt;
-        require(debtToCover > 0, "Loan is already healthy"); // Prevent unnecessary liquidation
-
-        // Apply the liquidation penalty to determine collateral required
-        uint256 liquidationPenalty = 5; // 5% penalty
-        uint256 collateralToLiquidate = (debtToCover *
-            (100 + liquidationPenalty)) / 100;
-
-        // Ensure there is enough collateral to cover liquidation
-        require(
-            collateralToLiquidate <= totalCollateral,
-            "Not enough collateral to liquidate"
-        );
-
-        // Liquidate collateral (across all or specified collateral tokens)
-        if (collateralTokens.length == 0) {
-            // Liquidate across all collateral
-            for (uint256 i = 0; i < collateralTokenList.length; i++) {
-                address token = collateralTokenList[i];
-                uint256 portion = _calculateCollateralToLiquidate(
-                    user,
-                    token,
-                    collateralToLiquidate // Amount including the penalty
-                );
-                _transferCollateral(user, msg.sender, portion, token);
-            }
-        } else {
-            // Liquidate only the chosen collateral tokens
-            uint256 remainingDebt = collateralToLiquidate;
-            for (uint256 i = 0; i < collateralTokens.length; i++) {
-                address token = collateralTokens[i];
-
-                if (remainingDebt == 0) break; // Stop if the debt is fully covered
-
-                uint256 portion = _calculateCollateralToLiquidate(
-                    user,
-                    token,
-                    remainingDebt // Amount including the penalty
-                );
-                _transferCollateral(user, msg.sender, portion, token);
-
-                // Reduce remaining debt based on transferred collateral
-                remainingDebt -= _getTokenValueInUSD(token, portion);
-            }
-        }
-
-        // Reduce the borrower's debt
-        userTotalDebt[user] -= debtToCover; // Pay off the covered debt
-
-        emit Liquidation(user, msg.sender, debtToCover, collateralToLiquidate);
     }
 
     // ======= HELPER FUNCTIONS ========
@@ -601,7 +550,7 @@ contract Market is ReentrancyGuard {
     }
 
     // Helper function to calculate how much a user can borrow based on the value of their
-    // collateral and the Loan-to-Value (LTV) ratio.
+    // collateral and the Loan-to-Value (LTV) ratio. Borrowing Power in USD
     function _getUserTotalBorrowingPower(
         address user
     ) public view returns (uint256 totalBorrowingPower) {
@@ -614,18 +563,19 @@ contract Market is ReentrancyGuard {
             // If user has collateral in this token
             uint256 collateralAmount = userCollateralBalances[user][token];
             if (collateralAmount > 0) {
-                uint256 ltv = ltvRatios[token]; // Get LTV ratio
+                // Use the max LTV ratio from market parameters (applies uniformly across all tokens)
+                uint256 ltv = marketParams.maxLTV;
                 uint256 collateralValue = _getTokenValueInUSD(
                     token,
                     collateralAmount
                 );
-                totalBorrowingPower += (collateralValue * ltv) / 100;
+                totalBorrowingPower += (collateralValue * ltv) / 1e18;
             }
         }
         return totalBorrowingPower;
     }
 
-    // function calculates the total value of the user's collateral in USD
+    // function calculates the total value of the User's Collateral in USD
     function _getUserTotalCollateralValue(
         address user
     ) internal view returns (uint256) {
@@ -644,52 +594,28 @@ contract Market is ReentrancyGuard {
         return totalCollateralValue;
     }
 
-    // View function to expose user total collateral value calculation
-    function getUserTotalCollateralValue(
-        address user
-    ) public view returns (uint256) {
-        return _getUserTotalCollateralValue(user);
-    }
-
     function _getHealthFactor(
         address user,
         uint256 userDebt, // User debt after borrowing or other operations
         uint256 userCollateralValue // collateral value (in USD)
     ) internal view returns (uint256) {
-        uint256 totalCollateralValue = 0;
+        uint256 collateralValueInUSD = _getUserTotalCollateralValue(user);
+        uint256 liquidationThreshold = marketParams.liquidationThreshold; // Get liquidation threshold
 
-        // Loop through all collateral tokens the user has deposited
-        for (uint256 i = 0; i < collateralTokenList.length; i++) {
-            address token = collateralTokenList[i];
-
-            uint256 userBalance = userCollateralBalances[user][token];
-            if (userBalance == 0) continue; // Skip tokens with no deposit
-
-            uint256 collateralValue = _getTokenValueInUSD(token, userBalance); // Convert token amount to USD
-            uint256 liquidationThreshold = liquidationThresholds[token]; // Get liquidation threshold (e.g., 80 for 80%)
-
-            // Weighted collateral value based on its liquidation threshold
-            totalCollateralValue +=
-                (collateralValue * liquidationThreshold) /
-                100;
-        }
+        // Weighted collateral value based on its liquidation threshold
+        uint256 totalCollateralValue = (collateralValueInUSD *
+            liquidationThreshold) / 1e18;
 
         uint256 totalDebt = userDebt > 0 ? userDebt : _getUserTotalDebt(user);
-        if (totalDebt == 0) {
-            return type(uint256).max; // Infinite health if no debt
+
+        // Convert debt (in native units) to USD
+        uint256 totalDebtInUSD = _getLoanDebtInUSD(totalDebt);
+
+        if (totalDebtInUSD == 0) {
+            return type(uint256).max; // Infinite health
         }
 
-        // Compute the final health factor
-        return (totalCollateralValue * 1e18) / totalDebt;
-    }
-
-    // View function to expose health factor calculation
-    function getHealthFactor(
-        address user,
-        uint256 userDebt, // debt after borrowing or other operations
-        uint256 userCollateralValue //collateral value (in USD)
-    ) public view returns (uint256) {
-        return _getHealthFactor(user, userDebt, userCollateralValue);
+        return (totalCollateralValue * 1e18) / totalDebtInUSD;
     }
 
     // Helper function to ensure that withdrawing collateral does not leave the user undercollateralized.
@@ -713,11 +639,12 @@ contract Market is ReentrancyGuard {
         // Get the user's current borrowing power
         uint256 totalBorrowingPower = _getUserTotalBorrowingPower(user);
 
-        // Get user's total outstanding debt
-        uint256 totalDebt = _getUserTotalDebt(user);
+        // Get user's total outstanding debt in USD
+        uint256 totalDebtNative = _getUserTotalDebt(user);
+        uint256 totalDebt = _getLoanDebtInUSD(totalDebtNative); // debt calculated in USD terms
 
         // Get the LTV and price of collateral token
-        uint256 ltv = ltvRatios[collateralToken];
+        uint256 ltv = marketParams.maxLTV;
 
         // Calculate the USD value of the withdrawing collateral
         uint256 collateralValue = _getTokenValueInUSD(collateralToken, amount);
@@ -764,7 +691,9 @@ contract Market is ReentrancyGuard {
         _updateInterestGlobalBorrowIndex();
 
         uint256 borrowingPower = _getUserTotalBorrowingPower(user);
-        uint256 totalDebt = _getUserTotalDebt(user);
+
+        uint256 totalDebtNative = _getUserTotalDebt(user);
+        uint256 totalDebt = _getLoanDebtInUSD(totalDebtNative); // debt in USD terms
 
         // Ensure borrowing power is not negative
         require(
@@ -774,11 +703,6 @@ contract Market is ReentrancyGuard {
 
         uint256 maxBorrowingPower = borrowingPower - totalDebt;
         return maxBorrowingPower;
-    }
-
-    // External function to expose max borrowing power calculation
-    function _getMaxBorrowingPower(address user) external returns (uint256) {
-        return _maxBorrowingPower(user);
     }
 
     // Helper function to calculate accrued interest on a debt considering dynamic rates
@@ -803,42 +727,67 @@ contract Market is ReentrancyGuard {
 
     // Function to update the global borrow index and the total interest accrued for the whole market
     function _updateInterestGlobalBorrowIndex() private {
-        // Get the current total borrows and total supply in the system
-        uint256 totalBorrowed = totalBorrows; // Total amount of borrows in the system
-        uint256 totalSupply = vaultContract.totalAssets(); // Total amount of assets in the system
+        // Get the current timestamp
+        uint256 currentTimestamp = block.timestamp;
 
-        // Prevent division by zero
+        // On first ever call, initialize lastAccrualTimestamp
+        if (lastAccrualTimestamp == 0) {
+            lastAccrualTimestamp = currentTimestamp;
+            return;
+        }
+
+        // Calculate time elapsed
+        uint256 timeElapsed = currentTimestamp - lastAccrualTimestamp;
+        if (timeElapsed == 0) {
+            return; // No time passed, no update needed
+        }
+
+        uint256 totalBorrowed = totalBorrows; // Total outstanding borrows
+        uint256 totalSupply = vaultContract.totalAssets(); // Total assets backing the system
+
+        // If no borrows or no liquidity, interest accrual doesn't make sense — just skip
         if (totalBorrowed == 0 || totalSupply == 0) {
             return;
         }
 
-        // Store the current global borrow index before the update
+        // Store current global borrow index before updating
         uint256 previousGlobalBorrowIndex = globalBorrowIndex;
 
-        // Get the current dynamic borrow rate (based on utilization rate)
-        uint256 dynamicBorrowRate = interestRateModel.getDynamicBorrowRate(); // This is already based on utilization
+        // Get the current dynamic borrow rate. Reflects current utilization rate (borrowed/supplied).
+        uint256 dynamicBorrowRate = interestRateModel.getDynamicBorrowRate(); // This is an annualized rate (scaled by 1e18)
 
-        // Calculate the interest accrued as a function of utilization-driven rate
-        uint256 interestAccrued = (dynamicBorrowRate * totalBorrowed) / 1e18;
+        // Scale the interest rate based on time elapsed (seconds), to match the actual time the loan was held.
+        // Formula: effectiveRate = dynamicRate * timeElapsed / secondsPerYear
+        uint256 secondsPerYear = 365 days; // or 31,536,000 seconds
+        uint256 effectiveRate = (dynamicBorrowRate * timeElapsed) /
+            secondsPerYear;
 
-        // Calculate the new global borrow index (previousIndex + increment)
-        uint256 newGlobalBorrowIndex = previousGlobalBorrowIndex +
-            ((previousGlobalBorrowIndex * interestAccrued) / totalSupply);
+        // Calculate total interest accrued
+        uint256 interestAccrued = ((effectiveRate * totalBorrowed) / 1e18);
+
+        // Split into lender portion and protocol fee
+        uint256 protocolFeeRate = marketParams.protocolFeeRate;
+        uint256 feePortion = (interestAccrued * protocolFeeRate) / 1e18;
+        uint256 lenderPortion = interestAccrued - feePortion;
+
+        // Calculate the new global borrow index
+        uint256 newGlobalBorrowIndex = (previousGlobalBorrowIndex *
+            (1e18 + effectiveRate)) / 1e18;
 
         // If the new index equals the previous index, skip updating
         if (newGlobalBorrowIndex == previousGlobalBorrowIndex) {
+            lastAccrualTimestamp = currentTimestamp; // Still update timestamp
             return;
         }
 
-        // Update the total interest accrued for the platform
-        lastAccruedInterest += interestAccrued;
+        // Add fee to protocol interests accrued
+        protocolAccrued += feePortion;
 
         // Set the new global borrow index
         globalBorrowIndex = newGlobalBorrowIndex;
-    }
 
-    function updateInterestAndGlobalBorrowIndex() external {
-        _updateInterestGlobalBorrowIndex();
+        // Update last accrual timestamp
+        lastAccrualTimestamp = currentTimestamp;
     }
 
     // Function to calculate total borrows plus accrued interest
@@ -847,7 +796,10 @@ contract Market is ReentrancyGuard {
         if (totalBorrowed == 0) {
             return 0; // No borrowings, no interest
         }
-        return totalBorrowed;
+        // totalBorrows is just the principal; multiply by globalBorrowIndex to include accrued interest
+        uint256 totalWithInterest = (totalBorrows * globalBorrowIndex) / 1e18;
+
+        return totalWithInterest;
     }
 
     // Function to remove an asset from userCollateralAssets[msg.sender]
@@ -884,7 +836,227 @@ contract Market is ReentrancyGuard {
         return tokenValueInUSD;
     }
 
-    // External function to expose _getTokenValueInUSD to the public
+    // Function to calculate loan asset in USD terms
+    function _getLoanDebtInUSD(uint256 amount) internal view returns (uint256) {
+        // Get the loan asset's price from oracle (e.g., ETH/USD = 3000 * 1e8)
+        int256 tokenPrice = priceOracle.getLatestPrice(address(loanAsset));
+        uint256 scaledPrice = uint256(tokenPrice) * 1e10; // Scale to 18 decimals
+        require(scaledPrice > 0, "Invalid token price from Oracle");
+
+        // Convert debt amount to USD (same logic as collateral)
+        uint256 debtInUSD = (amount * scaledPrice) / 1e18;
+
+        return debtInUSD;
+    }
+
+    // Helper function to validate and calculate liquidation
+    function _validateAndCalculateLiquidation(
+        address user
+    )
+        internal
+        view
+        returns (uint256 debtToCover, uint256 collateralToLiquidateUsd)
+    {
+        uint256 totalDebt = _getUserTotalDebt(user);
+        uint256 totalCollateral = _getUserTotalCollateralValue(user);
+
+        uint256 healthFactor = _getHealthFactor(
+            user,
+            totalDebt,
+            totalCollateral
+        );
+        require(healthFactor < 1e18, "User not eligible for liquidation");
+
+        uint256 minHealthFactor = marketParams.minHealthFactor;
+        uint256 buffer = marketParams.liquidationPenalty;
+        uint256 adjustedMinHealthFactor = (minHealthFactor * (1e18 + buffer)) /
+            1e18;
+
+        uint256 targetDebt = (totalCollateral *
+            marketParams.liquidationThreshold) / adjustedMinHealthFactor;
+
+        require(
+            targetDebt < totalDebt,
+            "Loan is already healthy or overcollateralized"
+        );
+
+        // Amount of debt that needs to be covered (liquidated)
+        debtToCover = totalDebt - targetDebt;
+        uint256 liquidationPenalty = marketParams.liquidationPenalty;
+
+        // Calculates the collateral in USD, including the liquidation penalty
+        collateralToLiquidateUsd =
+            (debtToCover * (1e18 + liquidationPenalty)) /
+            1e18;
+
+        require(
+            collateralToLiquidateUsd <= totalCollateral,
+            "Not enough collateral to liquidate"
+        );
+    }
+
+    // Helper function to process liquidation repayment
+    function _processLiquidatorRepayment(
+        address borrower, // The borrower whose debt is being reduced
+        address liquidator, // The user paying the debt
+        uint256 debtToCover
+    ) internal {
+        require(
+            IERC20(loanAsset).transferFrom(
+                liquidator,
+                address(this),
+                debtToCover
+            ),
+            "Transfer failed: insufficient allowance or balance"
+        );
+
+        // Calculate interest accrued at this point
+        uint256 interestAccrued = _borrowerInterestAccrued(borrower);
+
+        // Calculate protocol share (on the interest portion only)
+        uint256 protocolShare = (interestAccrued *
+            marketParams.protocolFeeRate) / 1e18;
+
+        // Net repayment to the vault after protocol fee (principal + lender share)
+        uint256 netRepayToVault = debtToCover - protocolShare;
+
+        // Pay the protocol fee (interest portion = 10% fees)
+        bool protocolSuccess = loanAsset.transfer(
+            protocolTreasury,
+            protocolShare
+        );
+        require(protocolSuccess, "Protocol fee transfer failed");
+
+        // Return to vault assets (principal + interests (lender fees = 90%))
+        vaultContract.adminRepay(netRepayToVault);
+
+        // Principal portion of the debt being covered
+        uint256 principalRepayment = debtToCover > interestAccrued
+            ? debtToCover - interestAccrued
+            : 0;
+
+        // Reduce user's debt and platform total borrows by principal repayment
+        userTotalDebt[borrower] -= principalRepayment;
+        totalBorrows -= principalRepayment;
+
+        // Update borrower's last index to reflect sync
+        lastUpdatedIndex[borrower] = globalBorrowIndex;
+    }
+
+    function _seizeOneCollateral(
+        address user,
+        address liquidator,
+        address token,
+        uint256 remainingToSeizeUsd
+    ) internal returns (uint256 usdLiquidated) {
+        uint256 userTokenBalance = userCollateralBalances[user][token];
+
+        if (userTokenBalance == 0) {
+            return 0;
+        }
+
+        uint256 tokenValueUsd = _getTokenValueInUSD(token, userTokenBalance);
+        if (tokenValueUsd == 0) {
+            return 0;
+        }
+
+        uint256 usdToSeize = remainingToSeizeUsd > tokenValueUsd
+            ? tokenValueUsd
+            : remainingToSeizeUsd;
+
+        int256 tokenPriceUsd = priceOracle.getLatestPrice(token);
+        uint256 scaledPrice = uint256(tokenPriceUsd) * 1e10;
+
+        uint256 tokenAmountToSeize = (usdToSeize * 1e18 + scaledPrice - 1) /
+            scaledPrice;
+
+        userCollateralBalances[user][token] -= tokenAmountToSeize;
+
+        require(
+            IERC20(token).transfer(liquidator, tokenAmountToSeize),
+            "Collateral transfer failed"
+        );
+
+        return usdToSeize;
+    }
+
+    // Function to seize liquidated collateral
+    function _seizeCollateral(
+        address user,
+        address liquidator,
+        uint256 collateralToLiquidateUsd
+    ) internal returns (uint256 totalLiquidated, uint256 remainingToSeizeUsd) {
+        address[] memory collateralTokens = userCollateralAssets[user];
+        remainingToSeizeUsd = collateralToLiquidateUsd;
+        totalLiquidated = 0;
+
+        for (
+            uint i = 0;
+            i < collateralTokens.length && remainingToSeizeUsd > 0;
+            i++
+        ) {
+            address token = collateralTokens[i];
+
+            uint256 liquidated = _seizeOneCollateral(
+                user,
+                liquidator,
+                token,
+                remainingToSeizeUsd
+            );
+
+            totalLiquidated += liquidated;
+            remainingToSeizeUsd -= liquidated;
+        }
+    }
+
+    // Get the user's collateral balances for each token in the collateralTokenList, converted to USD
+    function _getUserCollateralBalances(
+        address user
+    ) public view returns (address[] memory, uint256[] memory) {
+        uint256 tokenCount = collateralTokenList.length;
+        address[] memory tokens = new address[](tokenCount);
+        uint256[] memory usdBalances = new uint256[](tokenCount); // Store USD values for each token
+
+        for (uint256 i = 0; i < tokenCount; i++) {
+            address token = collateralTokenList[i];
+            uint256 balance = userCollateralBalances[user][token]; // Get user's balance for the token
+
+            // Use the existing function to get the USD value of the token balance
+            uint256 usdValue = _getTokenValueInUSD(token, balance);
+
+            tokens[i] = token;
+            usdBalances[i] = usdValue; // Store USD value
+        }
+
+        return (tokens, usdBalances);
+    }
+
+    // =============================================================
+    // PUBLIC TEST FUNCTIONS (for testing purposes only)
+    // =============================================================
+
+    function getUserTotalCollateralValue(
+        address user
+    ) public view returns (uint256) {
+        return _getUserTotalCollateralValue(user);
+    }
+
+    function getHealthFactor(
+        address user,
+        uint256 userDebt, // debt after borrowing or other operations
+        uint256 userCollateralValue //collateral value (in USD)
+    ) public view returns (uint256) {
+        return _getHealthFactor(user, userDebt, userCollateralValue);
+    }
+
+    function _getMaxBorrowingPower(address user) external returns (uint256) {
+        return _maxBorrowingPower(user);
+    }
+
+    function updateInterestGlobalBorrowIndex() external {
+        _updateInterestGlobalBorrowIndex();
+    }
+
     function getTokenValueInUSD(
         address collateralToken,
         uint256 amount
@@ -892,49 +1064,23 @@ contract Market is ReentrancyGuard {
         return _getTokenValueInUSD(collateralToken, amount);
     }
 
-    // This function determines the amount of collateral to transfer to the liquidator for the given debt.
-    function _calculateCollateralToLiquidate(
-        address user,
-        address token,
-        uint256 debtToCover
-    ) internal view returns (uint256) {
-        // Get the value of 1 whole token in USD (price per token)
-        uint256 pricePerTokenInUSD = _getTokenValueInUSD(token, 1e18);
-        require(pricePerTokenInUSD > 0, "Invalid price");
-
-        uint256 userCollateralBalance = userCollateralBalances[user][token]; // User's collateral balance
-
-        // Convert the debt to the equivalent collateral amount (in token units)
-        uint256 collateralEquivalent = (debtToCover * 1e18) /
-            pricePerTokenInUSD;
-
-        // Ensure we don't take more than the user's actual balance
-        return
-            collateralEquivalent > userCollateralBalance
-                ? userCollateralBalance
-                : collateralEquivalent;
+    function _loanDebtInUSD(uint256 amount) external returns (uint256) {
+        return _getLoanDebtInUSD(amount);
     }
 
-    function _transferCollateral(
+    function processLiquidatorRepaymentPublic(
         address borrower,
         address liquidator,
-        uint256 amountToLiquidate,
-        address collateralToken
-    ) internal {
-        uint256 userBalance = userCollateralBalances[borrower][collateralToken];
-        require(userBalance >= amountToLiquidate, "Insufficient collateral");
+        uint256 debtToCover
+    ) external {
+        _processLiquidatorRepayment(borrower, liquidator, debtToCover);
+    }
 
-        // Reduce the borrower's collateral balance
-        userCollateralBalances[borrower][collateralToken] -= amountToLiquidate;
-
-        // Transfer collateral from contract (market) to the liquidator
-        IERC20(collateralToken).transfer(liquidator, amountToLiquidate);
-
-        emit CollateralLiquidated(
-            borrower,
-            liquidator,
-            collateralToken,
-            amountToLiquidate
-        );
+    function seizeCollateralPublic(
+        address user,
+        address liquidator,
+        uint256 collateralToLiquidateUsd
+    ) external returns (uint256 totalLiquidated, uint256 remainingToSeizeUsd) {
+        return _seizeCollateral(user, liquidator, collateralToLiquidateUsd);
     }
 }

@@ -10,6 +10,7 @@ import "../src/InterestRateModel.sol";
 import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 
 contract VaultTest is Test {
+    address treasuryAddress = 0x1234567890AbcdEF1234567890aBcdef12345678;
     Vault public vault;
     Market public market;
     PriceOracle public priceOracle;
@@ -58,6 +59,7 @@ contract VaultTest is Test {
         priceOracle = new PriceOracle();
 
         market = new Market(
+            address(treasuryAddress),
             address(vault),
             address(priceOracle),
             address(interestRateModel),
@@ -70,19 +72,8 @@ contract VaultTest is Test {
         // Set the correct market address in InterestRateModel
         interestRateModel.setMarketContract(address(market));
 
-        // Add a collateral to lending market
-        uint256 ltv = 75;
-
-        // Add a liquidation threshold
-        uint256 liquidationThreshold = 80;
-
         vm.startPrank(address(this)); // Start impersonating test contract
-        market.addCollateralToken(
-            address(weth),
-            address(wethPriceAddress),
-            ltv,
-            liquidationThreshold
-        );
+        market.addCollateralToken(address(weth), address(wethPriceAddress));
         vm.stopPrank();
 
         // Set up account

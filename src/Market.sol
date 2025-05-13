@@ -364,6 +364,18 @@ contract Market is ReentrancyGuard {
 
     // ======= HELPER FUNCTIONS ========
 
+    function getLendingRate() public view returns (uint256) {
+        uint256 totalSupply = vaultContract.totalAssets();
+        if (totalSupply == 0) return 0;
+
+        uint256 util = (totalBorrows * 1e18) / totalSupply;
+        uint256 borrowRate = interestRateModel.getDynamicBorrowRate();
+
+        // lendingRate = utilization * borrowRate * (1 - protocolFee)
+        return
+            (util * borrowRate * (1e18 - marketParams.protocolFeeRate)) / 1e36;
+    }
+
     // Returns the total amount of a specific collateral token held by the contract
     function _getTotalCollateralLocked(
         address collateralToken
@@ -829,7 +841,7 @@ contract Market is ReentrancyGuard {
         return _getTokenValueInUSD(collateralToken, amount);
     }
 
-    function _loanDebtInUSD(uint256 amount) external returns (uint256) {
+    function _loanDebtInUSD(uint256 amount) external view returns (uint256) {
         return _getLoanDebtInUSD(amount);
     }
 

@@ -214,6 +214,11 @@ contract MarketTest is Test {
             "Min Health Factor mismatch"
         );
         assertEq(storedCloseFactor, closeFactor, "Close Factor mismatch");
+        assertEq(
+            storedProtocolFeeRate,
+            protocolFeeRate,
+            "Protocol Fee Rate mismatch"
+        );
     }
 
     // Test Add Collateral Token to market
@@ -591,14 +596,10 @@ contract MarketTest is Test {
         uint256 netRepayToVault = partialRepayment - protocolShare;
         console.log("Net repay to vault:", netRepayToVault);
 
-        bool success = dai.transferFrom(
-            user,
-            address(market),
-            partialRepayment
-        );
+        dai.transferFrom(user, address(market), partialRepayment);
 
         // Pay the protocol fee (interest portion)
-        bool protocolSuccess = dai.transfer(protocolTreasury, protocolShare);
+        dai.transfer(protocolTreasury, protocolShare);
 
         console.log(
             "protocol treasury balance:",
@@ -662,10 +663,6 @@ contract MarketTest is Test {
         vm.startPrank(user);
         market.depositCollateral(collateralToken, depositAmount);
         vm.stopPrank();
-
-        // Initial borrowing checks
-        uint256 userBalanceBeforeBorrow = dai.balanceOf(user);
-        uint256 vaultBalanceBeforeBorrow = dai.balanceOf(address(vault));
 
         // User borrows DAI
         vm.startPrank(user);
@@ -803,10 +800,6 @@ contract MarketTest is Test {
         uint256 collateralValue = market.getUserTotalCollateralValue(user);
         console.log("Collateral value:", collateralValue);
         vm.stopPrank();
-
-        // Initial borrowing checks
-        uint256 userBalanceBeforeBorrow = dai.balanceOf(user);
-        uint256 vaultBalanceBeforeBorrow = dai.balanceOf(address(vault));
 
         uint256 availableBorrowingPower1 = market._getMaxBorrowingPower(user);
         console.log("Available borrowing Power 1:", availableBorrowingPower1);

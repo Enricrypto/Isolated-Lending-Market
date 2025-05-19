@@ -337,12 +337,16 @@ contract Market is ReentrancyGuard {
         uint256 totalSupply = vaultContract.totalAssets();
         if (totalSupply == 0) return 0;
 
-        uint256 util = (totalBorrows * 1e18) / totalSupply;
+        uint256 utilization = Math.mulDiv(totalBorrows, 1e18, totalSupply);
         uint256 borrowRate = interestRateModel.getDynamicBorrowRate();
 
         // lendingRate = utilization * borrowRate * (1 - protocolFee)
         return
-            (util * borrowRate * (1e18 - marketParams.protocolFeeRate)) / 1e36;
+            Math.mulDiv(
+                Math.mulDiv(utilization, borrowRate, 1e18),
+                (1e18 - marketParams.protocolFeeRate),
+                1e18
+            );
     }
 
     // Returns the total amount of a specific collateral token held by the contract
@@ -450,8 +454,11 @@ contract Market is ReentrancyGuard {
         uint256 currentGlobalIndex = globalBorrowIndex;
 
         // Interest accrued is the difference in indices multiplied by the borrower's debt
-        uint256 interestAccrued = (userTotalDebt[borrower] *
-            (currentGlobalIndex - lastBorrowerIndex)) / 1e18;
+        uint256 interestAccrued = Math.mulDiv(
+            userTotalDebt[borrower],
+            (currentGlobalIndex - lastBorrowerIndex),
+            1e18
+        );
 
         return interestAccrued;
     }
@@ -486,12 +493,18 @@ contract Market is ReentrancyGuard {
 
         // Scale the interest rate based on time elapsed to match the actual time the loan was held
         uint256 secondsPerYear = 365 days;
-        uint256 effectiveRate = (dynamicBorrowRate * timeElapsed) /
-            secondsPerYear;
+        uint256 effectiveRate = Math.mulDiv(
+            dynamicBorrowRate,
+            timeElapsed,
+            secondsPerYear
+        );
 
         // Calculate the new global borrow index
-        uint256 newGlobalBorrowIndex = (previousGlobalBorrowIndex *
-            (1e18 + effectiveRate)) / 1e18;
+        uint256 newGlobalBorrowIndex = Math.mulDiv(
+            previousGlobalBorrowIndex,
+            (1e18 + effectiveRate),
+            1e18
+        );
 
         // Skip updating if the index remains the same
         if (newGlobalBorrowIndex == previousGlobalBorrowIndex) {
@@ -511,7 +524,11 @@ contract Market is ReentrancyGuard {
             return 0; // No borrowings, no interest
         }
         // Multiply by globalBorrowIndex to include accrued interest
-        uint256 totalWithInterest = (totalBorrows * globalBorrowIndex) / 1e18;
+        uint256 totalWithInterest = Math.mulDiv(
+            totalBorrows,
+            globalBorrowIndex,
+            1e18
+        );
 
         return totalWithInterest;
     }
@@ -543,7 +560,7 @@ contract Market is ReentrancyGuard {
         uint256 scaledPrice = uint256(tokenPrice) * 1e10; // Scale to 18 decimals
         require(scaledPrice > 0, "Invalid token price from Oracle");
 
-        uint256 tokenValueInUSD = (amount * scaledPrice) / 1e18;
+        uint256 tokenValueInUSD = Math.mulDiv(amount, scaledPrice, 1e18);
 
         return tokenValueInUSD;
     }
@@ -554,7 +571,7 @@ contract Market is ReentrancyGuard {
         uint256 scaledPrice = uint256(tokenPrice) * 1e10; // Scale to 18 decimals
         require(scaledPrice > 0, "Invalid token price from Oracle");
 
-        uint256 debtInUSD = (amount * scaledPrice) / 1e18;
+        uint256 debtInUSD = Math.mulDiv(amount, scaledPrice, 1e18);
 
         return debtInUSD;
     }
@@ -748,12 +765,8 @@ contract Market is ReentrancyGuard {
         return _getUserTotalCollateralValue(user);
     }
 
-    function getHealthFactor(
-        address user,
-        uint256 userDebt, // debt after borrowing or other operations
-        uint256 userCollateralValue //collateral value (in USD)
-    ) public view returns (uint256) {
-        return _getHealthFactor(user, userDebt, userCollateralValue);
+    function isHealthy(address user) public view returns (bool) {
+        return _isHealthy(user);
     }
 
     function _getMaxBorrowingPower(address user) external returns (uint256) {

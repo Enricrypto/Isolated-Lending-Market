@@ -138,22 +138,12 @@ contract MarketTest is Test {
         vm.stopPrank();
 
         // Set the market parameters (these can be whatever defaults you want for most tests)
-        uint256 liquidationThreshold = 0.8e18; // 80%
+        uint256 lltv = 0.8e18; // 80%
         uint256 liquidationPenalty = 0.05e18; // 5%
-        uint256 maxLTV = 0.75e18; // 75%
-        uint256 minHealthFactor = 1e18; // 1.0
-        uint256 closeFactor = 0.5e18; // 50%
         uint256 protocolFeeRate = 1e17; // 10% protocol fee rate
 
         vm.startPrank(address(this)); // Make sure you act as the admin/owner here
-        market.setMarketParameters(
-            liquidationThreshold,
-            liquidationPenalty,
-            maxLTV,
-            minHealthFactor,
-            closeFactor,
-            protocolFeeRate
-        );
+        market.setMarketParameters(lltv, liquidationPenalty, protocolFeeRate);
         vm.stopPrank();
     }
 
@@ -167,57 +157,33 @@ contract MarketTest is Test {
     // Test the setMarketParameters function
     function testSetMarketParameters() public {
         // Define new parameters to test
-        uint256 liquidationThreshold = 0.8e18; // Example: 80% liquidation threshold
+        uint256 lltv = 0.8e18; // Example: 80% liquidation loan-to-value
         uint256 liquidationPenalty = 0.05e18; // Example: 5% liquidation penalty
-        uint256 maxLTV = 0.75e18; // Example: 75% Loan-to-Value ratio
-        uint256 minHealthFactor = 1e18; // Example: Minimum health factor (1.2)
-        uint256 closeFactor = 0.5e18; // Example: 50% of collateral can be liquidated
         uint256 protocolFeeRate = 1e17; // 10% fee rate
 
         // Call the setMarketParameters function to update the parameters
         vm.startPrank(address(this));
-        market.setMarketParameters(
-            liquidationThreshold,
-            liquidationPenalty,
-            maxLTV,
-            minHealthFactor,
-            closeFactor,
-            protocolFeeRate
-        );
+        market.setMarketParameters(lltv, liquidationPenalty, protocolFeeRate);
 
         // Fetch the market parameters from the contract by destructuring the struct
         (
-            uint256 storedLiquidationThreshold,
+            uint256 storedLltv,
             uint256 storedLiquidationPenalty,
-            uint256 storedMaxLTV,
-            uint256 storedMinHealthFactor,
-            uint256 storedCloseFactor,
             uint256 storedProtocolFeeRate
         ) = market.marketParams();
         vm.stopPrank();
 
         // Assertions to verify the parameters have been updated correctly
-        assertEq(
-            storedLiquidationThreshold,
-            liquidationThreshold,
-            "Liquidation Threshold mismatch"
-        );
+        assertEq(storedLltv, lltv, "Liquidation loan-to-value mismatch");
         assertEq(
             storedLiquidationPenalty,
             liquidationPenalty,
             "Liquidation Penalty mismatch"
         );
-        assertEq(storedMaxLTV, maxLTV, "Max LTV mismatch");
-        assertEq(
-            storedMinHealthFactor,
-            minHealthFactor,
-            "Min Health Factor mismatch"
-        );
-        assertEq(storedCloseFactor, closeFactor, "Close Factor mismatch");
         assertEq(
             storedProtocolFeeRate,
             protocolFeeRate,
-            "Protocol Fee Rate mismatch"
+            "Protocol fee rate mismatch"
         );
     }
 
@@ -588,7 +554,7 @@ contract MarketTest is Test {
         console.log("Principal Repayment:", principalRepayment);
         console.log("Partial Repayment:", partialRepayment);
 
-        (, , , , , uint256 protocolFeeRate) = market.marketParams();
+        (, , uint256 protocolFeeRate) = market.marketParams();
 
         uint256 protocolShare = (interestAccrued * protocolFeeRate) / 1e18;
         console.log("Protocol share:", protocolShare);
@@ -704,22 +670,19 @@ contract MarketTest is Test {
         console.log("New Health Factor (after price drop):", newHealthFactor);
 
         (
-            uint256 liquidationThreshold,
+            uint256 lltv,
             uint256 liquidationPenalty,
-            ,
             uint256 minHealthFactor,
-            ,
 
         ) = market.marketParams();
         console.log("Min Health Factor", minHealthFactor);
         console.log("Liquidation Penalty", liquidationPenalty);
-        console.log("Liquidation Threshold", liquidationThreshold);
+        console.log("Liquidation Threshold", lltv);
         uint256 buffer = liquidationPenalty;
         uint256 adjustedMinHealthFactor = ((minHealthFactor * (1e18 + buffer)) /
             1e18);
         console.log("Adjusted safe health factor", adjustedMinHealthFactor);
-        uint256 targetDebt = (totalCollateral * liquidationThreshold) /
-            adjustedMinHealthFactor;
+        uint256 targetDebt = (totalCollateral * lltv) / adjustedMinHealthFactor;
         console.log("Target debt:", targetDebt);
 
         uint256 debtToCover = totalDebt - targetDebt;

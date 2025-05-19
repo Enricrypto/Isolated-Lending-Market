@@ -12,12 +12,8 @@ contract Vault is ERC4626, ReentrancyGuard {
     using Math for uint256;
 
     //Events
-    event Deposit(address indexed user, uint256 amount);
-    event Withdraw(address indexed user, uint256 amount);
     event BorrowedByMarket(address indexed market, uint256 amount);
     event RepaidToVault(address indexed market, uint256 amount);
-    event Deposit(address indexed user, uint256 amount, uint256 shares);
-    event Withdraw(address indexed user, uint256 amount, uint256 shares);
 
     Market public market; // Store the market
     address public owner;
@@ -51,20 +47,12 @@ contract Vault is ERC4626, ReentrancyGuard {
         _;
     }
 
-    modifier onlyValidMarket() {
-        require(address(market) != address(0), "Invalid market address");
-        _;
-    }
-
     /// @notice Deposit ERC-20 tokens into the vault
     function deposit(
         uint256 amount,
         address receiver
     ) public override nonReentrant returns (uint256 shares) {
-        require(amount > 0, "Deposit amount must be greater than 0");
-        shares = super.deposit(amount, receiver);
-        emit Deposit(receiver, amount, shares);
-        return shares;
+        return super.deposit(amount, receiver);
     }
 
     function withdraw(
@@ -72,43 +60,33 @@ contract Vault is ERC4626, ReentrancyGuard {
         address receiver,
         address user
     ) public override nonReentrant returns (uint256 shares) {
-        require(amount > 0, "Withdraw amount must be greater than 0");
-        shares = super.withdraw(amount, receiver, user);
-        emit Withdraw(user, amount, shares);
-        return shares;
+        return super.withdraw(amount, receiver, user);
     }
 
     // Admin function to borrow tokens, only callable by the market contract
     function adminBorrow(uint256 amount) external nonReentrant onlyMarket {
-        IERC20 token = IERC20(asset());
-        require(address(token) != address(0), "Asset token is not set");
-
         // Transfer tokens directly from vault to market (without burning shares)
-        bool success = token.transfer(msg.sender, amount);
+        bool success = IERC20(asset()).transfer(msg.sender, amount);
         require(success, "Token transfer failed");
 
         emit BorrowedByMarket(msg.sender, amount);
     }
 
     // Admin function to repay tokens back to the vault, only callable by the market contract
-    function adminRepay(uint256 amount) external onlyMarket {
-        IERC20 token = IERC20(asset());
-        require(address(token) != address(0), "Asset token is not set");
+    function adminRepay(uint256 amount) external nonReentrant onlyMarket {
         // Transfer tokens from market to vault (without burning shares)
-        bool success = token.transferFrom(msg.sender, address(this), amount);
+        bool success = IERC20(asset()).transferFrom(
+            msg.sender,
+            address(this),
+            amount
+        );
         require(success, "Token transfer failed");
 
         // Emit an event for the repayment action
         emit RepaidToVault(msg.sender, amount);
     }
 
-    function totalAssets()
-        public
-        view
-        override
-        onlyValidMarket
-        returns (uint256)
-    {
+    function totalAssets() public view override returns (uint256) {
         // Retrieves the idle (not lent) assets in the Vault.
         uint256 idleAssets = totalIdle();
 
@@ -147,9 +125,28 @@ contract Vault is ERC4626, ReentrancyGuard {
         return sharesBalance < maxShares ? sharesBalance : maxShares;
     }
 
+    function mint(
+        uint256 shares,
+        address receiver
+    ) public override nonReentrant returns (uint256 assets) {
+        return super.mint(shares, receiver);
+    }
+
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address owner
+    ) public override nonReentrant returns (uint256 assets) {
+        return super.redeem(shares, receiver, owner);
+    }
+
     function setMarket(address _market) external onlyOwner {
         require(address(market) == address(0), "Market already set");
         require(_market != address(0), "Invalid market address");
-        market = Market(_market);
+        Market newMarket = Market(_market);
+        // Vault can only receive valid market asset
+        require(market.loanAsset() == asset(), "Mismatched loan asset");
+
+        market = newMarket;
     }
 }

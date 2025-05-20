@@ -154,7 +154,7 @@ contract Market is ReentrancyGuard {
         require(supportedCollateralTokens[token], "Token not supported");
         require(depositsPaused[token], "Pause deposits first");
         require(
-            _getTotalCollateralLocked(token) == 0,
+            IERC20(token).balanceOf(address(this)) == 0,
             "Collateral still in use"
         );
 
@@ -356,32 +356,6 @@ contract Market is ReentrancyGuard {
             );
     }
 
-    // Returns the total amount of a specific collateral token held by the contract
-    function _getTotalCollateralLocked(
-        address collateralToken
-    ) public view returns (uint256) {
-        return IERC20(collateralToken).balanceOf(address(this));
-    }
-
-    // Calculates a user's total borrowing power (in USD) based on their collateral and the market's max LTV
-    function _getUserTotalBorrowingPower(
-        address user
-    ) public view returns (uint256 totalBorrowingPower) {
-        for (uint i = 0; i < collateralTokenList.length; i++) {
-            address token = collateralTokenList[i];
-            uint256 amount = userCollateralBalances[user][token];
-
-            if (amount > 0) {
-                uint256 value = _getTokenValueInUSD(token, amount);
-                totalBorrowingPower += Math.mulDiv(
-                    value,
-                    marketParams.lltv,
-                    1e18
-                );
-            }
-        }
-    }
-
     // Returns the total value (in USD) of all collateral a user has deposited
     function _getUserTotalCollateralValue(
         address user
@@ -403,11 +377,20 @@ contract Market is ReentrancyGuard {
         // Convert debt (in native units) to USD
         uint256 borrowedAmount = _getLoanDebtInUSD(totalDebt);
         uint256 collateralValue = _getUserTotalCollateralValue(user);
+
+        // Incorporate liquidation penalty in borrowed amount for health check
+        uint256 effectiveBorrowedAmount = Math.mulDiv(
+            borrowedAmount,
+            1e18 + marketParams.liquidationPenalty,
+            1e18
+        );
+
         uint256 healthFactor = Math.mulDiv(
             collateralValue,
             marketParams.lltv,
-            borrowedAmount
+            effectiveBorrowedAmount
         );
+
         return healthFactor >= 1e18;
     }
 
@@ -433,7 +416,8 @@ contract Market is ReentrancyGuard {
         // Update the global borrow index to ensure interest rates are up-to-date
         _updateGlobalBorrowIndex();
 
-        uint256 borrowingPower = _getUserTotalBorrowingPower(user);
+        uint256 borrowingPower = _getUserTotalCollateralValue(user) *
+            marketParams.lltv;
 
         uint256 totalDebtNative = _getUserTotalDebt(user);
         uint256 totalDebt = _getLoanDebtInUSD(totalDebtNative); // Debt in USD terms
@@ -786,6 +770,16 @@ contract Market is ReentrancyGuard {
 
     function _loanDebtInUSD(uint256 amount) external view returns (uint256) {
         return _getLoanDebtInUSD(amount);
+    }
+
+    function validateAndCalculateFullLiquidation(
+        address user
+    )
+        external
+        view
+        returns (uint256 debtToCover, uint256 collateralToSeizeUsd)
+    {
+        return _validateAndCalculateFullLiquidation(user);
     }
 
     function processLiquidatorRepaymentPublic(

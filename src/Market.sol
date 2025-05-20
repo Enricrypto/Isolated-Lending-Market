@@ -237,6 +237,7 @@ contract Market is ReentrancyGuard {
     function borrow(uint256 amount) external nonReentrant {
         _updateGlobalBorrowIndex();
 
+        uint256 collateralValue = _getUserTotalCollateralValue(msg.sender);
         uint256 newDebt = _getUserTotalDebt(msg.sender) + amount;
         uint256 borrowingPower = Math.mulDiv(
             collateralValue,
@@ -310,7 +311,7 @@ contract Market is ReentrancyGuard {
         (
             uint256 debtToCover,
             uint256 collateralToLiquidateUsd
-        ) = _validateAndCalculateLiquidation(user);
+        ) = _validateAndCalculateFullLiquidation(user);
 
         // Step 2: Liquidator repays the borrower's debt (transfers loan tokens to protocol)
         _processLiquidatorRepayment(user, msg.sender, debtToCover);

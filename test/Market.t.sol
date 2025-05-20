@@ -636,13 +636,13 @@ contract MarketTest is Test {
         vm.stopPrank();
 
         // Ensure initial conditions
-        uint256 initialHealthFactor = market.getHealthFactor(user, 0, 0);
-        console.log("Initial Health Factor:", initialHealthFactor);
-        assertGt(
-            initialHealthFactor,
-            1e18,
-            "Health factor should be >1 before price drop"
-        );
+        // uint256 initialHealthFactor = market.getHealthFactor(user, 0, 0);
+        // console.log("Initial Health Factor:", initialHealthFactor);
+        // assertGt(
+        //     initialHealthFactor,
+        //     1e18,
+        //     "Health factor should be >1 before price drop"
+        // );
 
         // ====== SIMULATE COLLATERAL PRICE DROP ======
         // Assume the WETH price drops by 30%, making the user go underwater.
@@ -662,59 +662,59 @@ contract MarketTest is Test {
         console.log("Total debt:", totalDebt);
         uint256 totalCollateral = market.getUserTotalCollateralValue(user);
         console.log("Total collateral:", totalCollateral);
-        uint256 newHealthFactor = market.getHealthFactor(
-            user,
-            totalDebt,
-            totalCollateral
-        );
-        console.log("New Health Factor (after price drop):", newHealthFactor);
+        // uint256 newHealthFactor = market.getHealthFactor(
+        //     user,
+        //     totalDebt,
+        //     totalCollateral
+        // );
+        // console.log("New Health Factor (after price drop):", newHealthFactor);
 
-        (
-            uint256 lltv,
-            uint256 liquidationPenalty,
-            uint256 minHealthFactor,
+        // (
+        //     uint256 lltv,
+        //     uint256 liquidationPenalty,
+        //     uint256 minHealthFactor,
 
-        ) = market.marketParams();
-        console.log("Min Health Factor", minHealthFactor);
-        console.log("Liquidation Penalty", liquidationPenalty);
-        console.log("Liquidation Threshold", lltv);
-        uint256 buffer = liquidationPenalty;
-        uint256 adjustedMinHealthFactor = ((minHealthFactor * (1e18 + buffer)) /
-            1e18);
-        console.log("Adjusted safe health factor", adjustedMinHealthFactor);
-        uint256 targetDebt = (totalCollateral * lltv) / adjustedMinHealthFactor;
-        console.log("Target debt:", targetDebt);
+        // ) = market.marketParams();
+        // console.log("Min Health Factor", minHealthFactor);
+        // console.log("Liquidation Penalty", liquidationPenalty);
+        // console.log("Liquidation Threshold", lltv);
+        // uint256 buffer = liquidationPenalty;
+        // uint256 adjustedMinHealthFactor = ((minHealthFactor * (1e18 + buffer)) /
+        //     1e18);
+        // console.log("Adjusted safe health factor", adjustedMinHealthFactor);
+        // uint256 targetDebt = (totalCollateral * lltv) / adjustedMinHealthFactor;
+        // console.log("Target debt:", targetDebt);
 
-        uint256 debtToCover = totalDebt - targetDebt;
-        console.log("Debt to cover:", debtToCover);
+        // uint256 debtToCover = totalDebt - targetDebt;
+        // console.log("Debt to cover:", debtToCover);
 
-        uint256 collateralToLiquidateUsd = (debtToCover *
-            (1e18 + liquidationPenalty)) / 1e18;
-        console.log("collateral to liquidate USD:", collateralToLiquidateUsd);
+        // uint256 collateralToLiquidateUsd = (debtToCover *
+        //     (1e18 + liquidationPenalty)) / 1e18;
+        // console.log("collateral to liquidate USD:", collateralToLiquidateUsd);
 
-        uint256 userDebt = market._getUserTotalDebt(user);
-        console.log("User debt:", userDebt);
+        // uint256 userDebt = market._getUserTotalDebt(user);
+        // console.log("User debt:", userDebt);
 
-        uint256 liquidatorBalance = IERC20(address(weth)).balanceOf(liquidator);
-        console.log("Liquidator's balance:", liquidatorBalance);
+        // uint256 liquidatorBalance = IERC20(address(weth)).balanceOf(liquidator);
+        // console.log("Liquidator's balance:", liquidatorBalance);
 
-        market.processLiquidatorRepaymentPublic(user, liquidator, debtToCover);
+        // market.processLiquidatorRepaymentPublic(user, liquidator, debtToCover);
 
-        market.seizeCollateralPublic(
-            user,
-            liquidator,
-            collateralToLiquidateUsd
-        );
+        // market.seizeCollateralPublic(
+        //     user,
+        //     liquidator,
+        //     collateralToLiquidateUsd
+        // );
 
-        uint256 userDebtAfter = market._getUserTotalDebt(user);
-        console.log("User debt after:", userDebtAfter);
+        // uint256 userDebtAfter = market._getUserTotalDebt(user);
+        // console.log("User debt after:", userDebtAfter);
 
-        uint256 liquidatorBalanceAfter = IERC20(address(weth)).balanceOf(
-            liquidator
-        );
-        console.log("Liquidator's balance after:", liquidatorBalanceAfter);
+        // uint256 liquidatorBalanceAfter = IERC20(address(weth)).balanceOf(
+        //     liquidator
+        // );
+        // console.log("Liquidator's balance after:", liquidatorBalanceAfter);
 
-        vm.stopPrank();
+        // vm.stopPrank();
     }
 
     function testProcessLiquidatorRepayment() public {

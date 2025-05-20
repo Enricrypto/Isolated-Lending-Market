@@ -135,9 +135,9 @@ contract Vault is ERC4626, ReentrancyGuard {
     function redeem(
         uint256 shares,
         address receiver,
-        address owner
+        address shareOwner
     ) public override nonReentrant returns (uint256 assets) {
-        return super.redeem(shares, receiver, owner);
+        return super.redeem(shares, receiver, shareOwner);
     }
 
     function setMarket(address _market) external onlyOwner {
@@ -145,7 +145,10 @@ contract Vault is ERC4626, ReentrancyGuard {
         require(_market != address(0), "Invalid market address");
         Market newMarket = Market(_market);
         // Vault can only receive valid market asset
-        require(market.loanAsset() == asset(), "Mismatched loan asset");
+        require(
+            address(market.loanAsset()) == asset(),
+            "Mismatched loan asset"
+        );
 
         market = newMarket;
     }

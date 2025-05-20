@@ -146,7 +146,7 @@ contract Vault is ERC4626, ReentrancyGuard {
         Market newMarket = Market(_market);
         // Vault can only receive valid market asset
         require(
-            address(market.loanAsset()) == asset(),
+            address(newMarket.loanAsset()) == asset(),
             "Mismatched loan asset"
         );
 

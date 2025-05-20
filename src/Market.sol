@@ -303,7 +303,7 @@ contract Market is ReentrancyGuard {
         emit Repay(msg.sender, amount);
     }
 
-    function liquidate(address user) external {
+    function liquidate(address user) external nonReentrant {
         _updateGlobalBorrowIndex(); // Ensure interest accrual is up to date
 
         // Step 1: Check if user is eligible for liquidation and calculate how much debt can be repaid and how much collateral can be seized (in USD)
@@ -576,43 +576,36 @@ contract Market is ReentrancyGuard {
         return debtInUSD;
     }
 
-    // Helper function to validate and calculate liquidation
-    function _validateAndCalculateLiquidation(
+    // Helper function to validate and calculate full liquidation
+    function _validateAndCalculateFullLiquidation(
         address user
     )
         internal
         view
-        returns (uint256 debtToCover, uint256 collateralToLiquidateUsd)
+        returns (uint256 debtToCover, uint256 collateralToSeizeUsd)
     {
         require(!_isHealthy(user), "User not eligible for liquidation");
 
         uint256 currentDebt = _getUserTotalDebt(user);
-        uint256 currentDebtInUSD = _getLoanDebtInUSD(currentDebt); // convert to USD
+        uint256 debtInUSD = _getLoanDebtInUSD(currentDebt); // convert to USD
         uint256 collateralValue = _getUserTotalCollateralValue(user); // in USD terms
 
-        // Max debt allowed under LLTV threshold, including liquidation penalty
-        uint256 targetDebt = Math.mulDiv(
-            collateralValue,
-            marketParams.lltv,
-            1e18 + marketParams.liquidationPenalty
-        );
+        // Liquidator repays full debt
+        debtToCover = debtInUSD;
 
-        // Debt amount to cover in USD to become healthyxx
-        debtToCover = currentDebtInUSD - targetDebt;
-
-        require(
-            debtToCover <= collateralValue,
-            "Not enough collateral to liquidate"
-        );
-
-        // Account for liquidation penalty — this is the value of collateral to seize
-        collateralToLiquidateUsd = Math.mulDiv(
+        // Calculate how much collateral should be seized (debt + liquidation penalty)
+        collateralToSeizeUsd = Math.mulDiv(
             debtToCover,
             1e18 + marketParams.liquidationPenalty,
             1e18
         );
 
-        return (debtToCover, collateralToLiquidateUsd);
+        require(
+            collateralToSeizeUsd <= collateralValue,
+            "Not enough collateral to cover liquidation"
+        );
+
+        return (debtToCover, collateralToSeizeUsd);
     }
 
     // Helper function to process liquidation repayment
@@ -708,10 +701,10 @@ contract Market is ReentrancyGuard {
     function _seizeCollateral(
         address user,
         address liquidator,
-        uint256 collateralToLiquidateUsd
+        uint256 collateralToSeizeUsd
     ) internal returns (uint256 totalLiquidated, uint256 remainingToSeizeUsd) {
         address[] memory collateralTokens = userCollateralAssets[user];
-        remainingToSeizeUsd = collateralToLiquidateUsd;
+        remainingToSeizeUsd = collateralToSeizeUsd;
         totalLiquidated = 0;
 
         for (

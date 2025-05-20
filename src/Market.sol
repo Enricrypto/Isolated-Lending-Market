@@ -280,8 +280,14 @@ contract Market is ReentrancyGuard {
             1e18
         );
 
-        uint256 principal = amount - interest;
-        uint256 vaultRepayment = amount - protocolFee;
+        // Portion of interest going to the vault
+        uint256 interestToVault = interest - protocolFee;
+
+        // Principal repaid is anything above interest
+        uint256 principal = amount > interest ? amount - interest : 0;
+
+        // Total sent to vault = principal + interestToVault
+        uint256 vaultRepayment = principal + interestToVault;
 
         require(
             loanAsset.transferFrom(msg.sender, address(this), amount),

@@ -369,7 +369,7 @@ contract MarketTest is Test {
         vm.stopPrank();
 
         uint256 globalBorrowIndex1 = market.globalBorrowIndex();
-        console.log("gobal borrow index 1", globalBorrowIndex1);
+        console.log("global borrow index 1", globalBorrowIndex1);
 
         uint256 userDebtAfterBorrow1 = market._getUserTotalDebt(user);
 
@@ -384,6 +384,12 @@ contract MarketTest is Test {
         uint256 timeToAdvance = 5 days;
         vm.warp(block.timestamp + timeToAdvance);
 
+        // Update interest and global borrow index without user interaction
+        market.updateGlobalBorrowIndex();
+
+        uint256 globalBorrowIndex2 = market.globalBorrowIndex();
+        console.log("global borrow index 2", globalBorrowIndex2);
+
         uint256 totalBorrowed = market.totalBorrows();
         console.log("total borrows:", totalBorrowed);
 
@@ -396,8 +402,8 @@ contract MarketTest is Test {
         // Update interest and global borrow index without user interaction
         market.updateGlobalBorrowIndex();
 
-        uint256 globalBorrowIndex2 = market.globalBorrowIndex();
-        console.log("gobal borrow index 2", globalBorrowIndex2);
+        uint256 globalBorrowIndex3 = market.globalBorrowIndex();
+        console.log("global borrow index 3", globalBorrowIndex3);
 
         uint256 userDebtAfterUpdate = market._getUserTotalDebt(user);
 
@@ -443,7 +449,7 @@ contract MarketTest is Test {
         address collateralToken = address(weth);
         address priceFeed = wethPrice;
         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
-        uint256 depositAmount = 2 * 1e18; // 3 WETH
+        uint256 depositAmount = 2 * 1e18; // 2 WETH
         uint256 borrowAmount = 2000 * 1e18; // 2000 DAI
         uint256 additionalBorrowAmount = 1000 * 1e18; // Additional borrow: 500 DAI
 
@@ -556,16 +562,24 @@ contract MarketTest is Test {
 
         (, , uint256 protocolFeeRate) = market.marketParams();
 
-        uint256 protocolShare = (interestAccrued * protocolFeeRate) / 1e18;
-        console.log("Protocol share:", protocolShare);
+        uint256 protocolFee = (interestAccrued * protocolFeeRate) / 1e18;
+        console.log("Protocol Fee", protocolFee);
 
-        uint256 netRepayToVault = partialRepayment - protocolShare;
+        uint256 interestToVault = interestAccrued - protocolFee;
+        console.log("Interest to vault", interestToVault);
+
+        uint256 principal = partialRepayment > interestAccrued
+            ? partialRepayment - interestAccrued
+            : 0;
+        console.log("Principal", principal);
+
+        uint256 netRepayToVault = principal + interestToVault;
         console.log("Net repay to vault:", netRepayToVault);
 
         dai.transferFrom(user, address(market), partialRepayment);
 
         // Pay the protocol fee (interest portion)
-        dai.transfer(protocolTreasury, protocolShare);
+        dai.transfer(protocolTreasury, protocolFee);
 
         console.log(
             "protocol treasury balance:",

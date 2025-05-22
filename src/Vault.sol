@@ -91,7 +91,7 @@ contract Vault is ERC4626, ReentrancyGuard {
         uint256 idleAssets = totalIdle();
 
         // Adds the borrowed assets, including interests owed to the platform
-        uint256 borrowedAssets = market._lentAssets();
+        uint256 borrowedAssets = market.totalBorrowsWithInterest();
 
         // Return the total assets including borrowed amounts
         return idleAssets + borrowedAssets;

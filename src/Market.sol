@@ -34,7 +34,6 @@ contract Market is ReentrancyGuard {
     uint256 public lastAccrualTimestamp;
 
     // --- Collateral Management ---
-    address[] public collateralTokenList;
     mapping(address => bool) public supportedCollateralTokens;
     mapping(address => bool) public depositsPaused;
     mapping(address => mapping(address => uint256))
@@ -128,7 +127,6 @@ contract Market is ReentrancyGuard {
         require(!supportedCollateralTokens[token], "Token already added");
 
         supportedCollateralTokens[token] = true;
-        collateralTokenList.push(token);
         priceOracle.addPriceFeed(token, priceFeed);
 
         emit CollateralTokenAdded(token);
@@ -159,16 +157,6 @@ contract Market is ReentrancyGuard {
         );
 
         supportedCollateralTokens[token] = false;
-
-        // Swap-and-pop for efficient array removal
-        uint len = collateralTokenList.length;
-        for (uint i = 0; i < len; i++) {
-            if (collateralTokenList[i] == token) {
-                collateralTokenList[i] = collateralTokenList[len - 1];
-                collateralTokenList.pop();
-                break;
-            }
-        }
 
         emit CollateralTokenRemoved(token);
     }
@@ -212,9 +200,22 @@ contract Market is ReentrancyGuard {
             "Insufficient collateral"
         );
 
-        // I SHOULD CHECK IF THE POSITION IS HEALTHY AFTER WITHDRAWAL,
-        // BECAUSE THE POSITION CAN BECOME EXTREMELY UNHEALTHY AND BAD FOR THE PROTOCOL
-        // CHECK IF POSITION IS HEALTHY AFTER SIMULATING BORROW COULD BE A SOLUTION
+        // Temporarily subtract the collateral from user's balance
+        userCollateralBalances[msg.sender][token] -= amount;
+
+        bool stillHealthy = _isHealthy(msg.sender);
+
+        // Revert the change if not healthy
+        userCollateralBalances[msg.sender][token] += amount;
+
+        require(stillHealthy, "Withdrawal would make position unhealthy");
+
+        // If user is withdrawing paused collateral. Users can't use paused collateral to keep a debt open.
+        // But they can withdraw it once they repay everything.
+        require(
+            !depositsPaused[token] || userTotalDebt[msg.sender] == 0,
+            "Cannot withdraw paused collateral while in debt"
+        );
 
         require(
             IERC20(token).balanceOf(address(this)) >= amount,
@@ -241,7 +242,8 @@ contract Market is ReentrancyGuard {
     function borrow(uint256 amount) external nonReentrant {
         _updateGlobalBorrowIndex();
 
-        uint256 collateralValue = _getUserTotalCollateralValue(msg.sender);
+        // Collateral value doesn't include paused collateral tokens
+        uint256 collateralValue = _getUserBorrowableCollateralValue(msg.sender);
         uint256 newDebt = _getUserTotalDebt(msg.sender) + amount;
         uint256 borrowingPower = Math.mulDiv(
             collateralValue,
@@ -341,10 +343,43 @@ contract Market is ReentrancyGuard {
         );
     }
 
-    // ======= HELPER FUNCTIONS ========
+    // ======= DEBT CALCULATIONS =======
+
+    // Function to calculate total borrows plus accrued interest
+    function totalBorrowsWithInterest() external view returns (uint256) {
+        uint256 totalBorrowed = totalBorrows;
+        if (totalBorrowed == 0) {
+            return 0; // No borrowings, no interest
+        }
+        // Multiply by globalBorrowIndex to include accrued interest
+        uint256 totalWithInterest = Math.mulDiv(
+            totalBorrows,
+            globalBorrowIndex,
+            1e18
+        );
+
+        return totalWithInterest;
+    }
+
+    // Function to expose market parameters
+    function getMarketParameters()
+        external
+        view
+        returns (
+            uint256 lltv,
+            uint256 liquidationPenalty,
+            uint256 protocolFeeRate
+        )
+    {
+        return (
+            marketParams.lltv,
+            marketParams.liquidationPenalty,
+            marketParams.protocolFeeRate
+        );
+    }
 
     // Function to calculate lending rate
-    function getLendingRate() public view returns (uint256) {
+    function getLendingRate() external view returns (uint256) {
         uint256 totalSupply = vaultContract.totalAssets();
         if (totalSupply == 0) return 0;
 
@@ -360,16 +395,53 @@ contract Market is ReentrancyGuard {
             );
     }
 
+    // ======= HELPER FUNCTIONS ========
+
+    // Calculates the total debt for a user, including accrued interest
+    function _getUserTotalDebt(
+        address user
+    ) internal view returns (uint256 totalDebt) {
+        uint256 storedDebt = userTotalDebt[user];
+
+        if (storedDebt == 0) {
+            return 0;
+        }
+
+        // Add accrued interest to stored debt
+        uint256 interestAccrued = _borrowerInterestAccrued(user);
+        totalDebt = storedDebt + interestAccrued;
+
+        return totalDebt;
+    }
+
     // Returns the total value (in USD) of all collateral a user has deposited
     function _getUserTotalCollateralValue(
         address user
     ) internal view returns (uint256 totalValue) {
-        for (uint i = 0; i < collateralTokenList.length; i++) {
-            address token = collateralTokenList[i];
+        address[] memory tokens = userCollateralAssets[user];
+
+        for (uint i = 0; i < tokens.length; i++) {
+            address token = tokens[i];
             uint256 amount = userCollateralBalances[user][token];
-            // Check if token deposits has been paused to avoid new positions using that collateral
-            if (amount > 0 && !depositsPaused[token]) {
+
+            if (amount > 0) {
                 totalValue += _getTokenValueInUSD(token, amount);
+            }
+        }
+    }
+
+    function _getUserBorrowableCollateralValue(
+        address user
+    ) internal view returns (uint256 totalValue) {
+        address[] memory tokens = userCollateralAssets[user];
+
+        for (uint i = 0; i < tokens.length; i++) {
+            address token = tokens[i];
+            if (!depositsPaused[token]) {
+                uint256 amount = userCollateralBalances[user][token];
+                if (amount > 0) {
+                    totalValue += _getTokenValueInUSD(token, amount);
+                }
             }
         }
     }
@@ -399,48 +471,10 @@ contract Market is ReentrancyGuard {
         return healthFactor >= 1e18;
     }
 
-    // Calculates the total debt for a user, including accrued interest
-    function _getUserTotalDebt(
-        address user
-    ) public view returns (uint256 totalDebt) {
-        uint256 storedDebt = userTotalDebt[user];
-
-        if (storedDebt == 0) {
-            return 0;
-        }
-
-        // Add accrued interest to stored debt
-        uint256 interestAccrued = _borrowerInterestAccrued(user);
-        totalDebt = storedDebt + interestAccrued;
-
-        return totalDebt;
-    }
-
-    // Calculates the maximum borrowing capacity of a user
-    function _maxBorrowingPower(address user) internal returns (uint256) {
-        // Update the global borrow index to ensure interest rates are up-to-date
-        _updateGlobalBorrowIndex();
-
-        uint256 borrowingPower = _getUserTotalCollateralValue(user) *
-            marketParams.lltv;
-
-        uint256 totalDebtNative = _getUserTotalDebt(user);
-        uint256 totalDebt = _getLoanDebtInUSD(totalDebtNative); // Debt in USD terms
-
-        // Ensure borrowing power is not negative
-        require(
-            borrowingPower >= totalDebt,
-            "Negative borrowing power detected"
-        );
-
-        uint256 maxBorrowingPower = borrowingPower - totalDebt;
-        return maxBorrowingPower;
-    }
-
     // Calculates the accrued interest on a debt considering dynamic rates
     function _borrowerInterestAccrued(
         address borrower
-    ) public view returns (uint256) {
+    ) internal view returns (uint256) {
         // Return 0 if no debt is recorded for the borrower
         if (userTotalDebt[borrower] == 0 || lastUpdatedIndex[borrower] == 0) {
             return 0;
@@ -513,27 +547,11 @@ contract Market is ReentrancyGuard {
         lastAccrualTimestamp = currentTimestamp;
     }
 
-    // Function to calculate total borrows plus accrued interest
-    function _lentAssets() public view returns (uint256) {
-        uint256 totalBorrowed = totalBorrows;
-        if (totalBorrowed == 0) {
-            return 0; // No borrowings, no interest
-        }
-        // Multiply by globalBorrowIndex to include accrued interest
-        uint256 totalWithInterest = Math.mulDiv(
-            totalBorrows,
-            globalBorrowIndex,
-            1e18
-        );
-
-        return totalWithInterest;
-    }
-
     // Function to remove an asset from userCollateralAssets[msg.sender]
     function _removeCollateralAsset(
         address user,
         address collateralToken
-    ) internal {
+    ) private {
         uint256 length = userCollateralAssets[user].length;
         for (uint256 i = 0; i < length; i++) {
             if (userCollateralAssets[user][i] == collateralToken) {
@@ -722,45 +740,6 @@ contract Market is ReentrancyGuard {
         }
     }
 
-    // Get the user's collateral balances for each token in the collateralTokenList, converted to USD
-    function _getUserCollateralBalances(
-        address user
-    ) public view returns (address[] memory, uint256[] memory) {
-        uint256 tokenCount = collateralTokenList.length;
-        address[] memory tokens = new address[](tokenCount);
-        uint256[] memory usdBalances = new uint256[](tokenCount); // Store USD values for each token
-
-        for (uint256 i = 0; i < tokenCount; i++) {
-            address token = collateralTokenList[i];
-            uint256 balance = userCollateralBalances[user][token]; // Get user's balance for the token
-
-            // Use the existing function to get the USD value of the token balance
-            uint256 usdValue = _getTokenValueInUSD(token, balance);
-
-            tokens[i] = token;
-            usdBalances[i] = usdValue; // Store USD value
-        }
-
-        return (tokens, usdBalances);
-    }
-
-    // Function to expose market parameters for UX (frontend)
-    function getMarketParameters()
-        external
-        view
-        returns (
-            uint256 lltv,
-            uint256 liquidationPenalty,
-            uint256 protocolFeeRate
-        )
-    {
-        return (
-            marketParams.lltv,
-            marketParams.liquidationPenalty,
-            marketParams.protocolFeeRate
-        );
-    }
-
     // =============================================================
     // PUBLIC TEST FUNCTIONS (for testing purposes only)
     // =============================================================
@@ -773,10 +752,6 @@ contract Market is ReentrancyGuard {
 
     function isHealthy(address user) public view returns (bool) {
         return _isHealthy(user);
-    }
-
-    function _getMaxBorrowingPower(address user) external returns (uint256) {
-        return _maxBorrowingPower(user);
     }
 
     function updateGlobalBorrowIndex() external {

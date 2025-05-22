@@ -212,6 +212,10 @@ contract Market is ReentrancyGuard {
             "Insufficient collateral"
         );
 
+        // I SHOULD CHECK IF THE POSITION IS HEALTHY AFTER WITHDRAWAL,
+        // BECAUSE THE POSITION CAN BECOME EXTREMELY UNHEALTHY AND BAD FOR THE PROTOCOL
+        // CHECK IF POSITION IS HEALTHY AFTER SIMULATING BORROW COULD BE A SOLUTION
+
         require(
             IERC20(token).balanceOf(address(this)) >= amount,
             "Insufficient protocol liquidity"
@@ -363,7 +367,8 @@ contract Market is ReentrancyGuard {
         for (uint i = 0; i < collateralTokenList.length; i++) {
             address token = collateralTokenList[i];
             uint256 amount = userCollateralBalances[user][token];
-            if (amount > 0) {
+            // Check if token deposits has been paused to avoid new positions using that collateral
+            if (amount > 0 && !depositsPaused[token]) {
                 totalValue += _getTokenValueInUSD(token, amount);
             }
         }
@@ -737,6 +742,23 @@ contract Market is ReentrancyGuard {
         }
 
         return (tokens, usdBalances);
+    }
+
+    // Function to expose market parameters for UX (frontend)
+    function getMarketParameters()
+        external
+        view
+        returns (
+            uint256 lltv,
+            uint256 liquidationPenalty,
+            uint256 protocolFeeRate
+        )
+    {
+        return (
+            marketParams.lltv,
+            marketParams.liquidationPenalty,
+            marketParams.protocolFeeRate
+        );
     }
 
     // =============================================================

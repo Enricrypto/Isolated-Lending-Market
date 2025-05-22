@@ -371,7 +371,7 @@ contract MarketTest is Test {
         uint256 globalBorrowIndex1 = market.globalBorrowIndex();
         console.log("global borrow index 1", globalBorrowIndex1);
 
-        uint256 userDebtAfterBorrow1 = market._getUserTotalDebt(user);
+        uint256 userDebtAfterBorrow1 = market.getUserTotalDebt(user);
 
         // Assert first borrow updated user's debt correctly
         assertEq(
@@ -405,7 +405,7 @@ contract MarketTest is Test {
         uint256 globalBorrowIndex3 = market.globalBorrowIndex();
         console.log("global borrow index 3", globalBorrowIndex3);
 
-        uint256 userDebtAfterUpdate = market._getUserTotalDebt(user);
+        uint256 userDebtAfterUpdate = market.getUserTotalDebt(user);
 
         // Assert first update is updating user's debt correctly
         assertGt(
@@ -426,7 +426,7 @@ contract MarketTest is Test {
         market.borrow(borrowAmount2);
         vm.stopPrank();
 
-        uint256 userDebtAfterBorrow2 = market._getUserTotalDebt(user);
+        uint256 userDebtAfterBorrow2 = market.getUserTotalDebt(user);
         uint256 totalExpectedDebt = borrowAmount1 + borrowAmount2;
 
         // Assert total debt is updated after the second borrow
@@ -474,16 +474,10 @@ contract MarketTest is Test {
         uint256 userBalanceBeforeBorrow = dai.balanceOf(user);
         uint256 vaultBalanceBeforeBorrow = dai.balanceOf(address(vault));
 
-        // uint256 availableBorrowingPower1 = market._getMaxBorrowingPower(user);
-        // console.log("Available borrowing Power 1:", availableBorrowingPower1);
-
         // User borrows for the first time
         vm.startPrank(user);
         market.borrow(borrowAmount);
         vm.stopPrank();
-
-        // uint256 availableBorrowingPower2 = market._getMaxBorrowingPower(user);
-        // console.log("Available borrowing Power 2:", availableBorrowingPower2);
 
         uint256 userDebtAfterFirstBorrow = market.userTotalDebt(user);
         uint256 userBalanceAfterFirstBorrow = dai.balanceOf(user);
@@ -553,7 +547,7 @@ contract MarketTest is Test {
         // uint256 afterGlobalBorrowIndex = market.globalBorrowIndex();
         // console.log("After global borrow index:", afterGlobalBorrowIndex);
 
-        // uint256 interestAccrued = market._borrowerInterestAccrued(user);
+        // uint256 interestAccrued = market.borrowerInterestAccrued(user);
         // console.log("Interest accrued:", interestAccrued);
 
         // uint256 principalRepayment = partialRepayment - interestAccrued;
@@ -595,7 +589,7 @@ contract MarketTest is Test {
 
         // uint256 vaultDaiBalance = dai.balanceOf(address(vault));
         // console.log("Vault DAI Balance:", vaultDaiBalance);
-        uint256 interestAccrued = market._borrowerInterestAccrued(user);
+        uint256 interestAccrued = market.getBorrowerInterestAccrued(user);
 
         vm.startPrank(user);
         market.repay(partialRepayment);
@@ -603,7 +597,7 @@ contract MarketTest is Test {
 
         uint256 userDebtAfterRepay = market.userTotalDebt(user);
         uint256 userBalanceAfterRepay = dai.balanceOf(user);
-        uint256 vaultBalanceAfterRepay = dai.balanceOf(address(vault));
+        // uint256 vaultBalanceAfterRepay = dai.balanceOf(address(vault));
 
         // Assert partial repayment
         assertEq(
@@ -663,7 +657,7 @@ contract MarketTest is Test {
 
         vm.startPrank(liquidator);
         // market.liquidate(user);
-        uint256 totalDebt = market._getUserTotalDebt(user);
+        uint256 totalDebt = market.getUserTotalDebt(user);
         console.log("Total debt:", totalDebt);
         uint256 debtInUSD = market._loanDebtInUSD(totalDebt);
         uint256 totalCollateral = market.getUserTotalCollateralValue(user);
@@ -726,7 +720,7 @@ contract MarketTest is Test {
 
         vm.startPrank(liquidator);
         market.validateAndCalculateFullLiquidation(user);
-        // uint256 currentDebt = market._getUserTotalDebt(user);
+        // uint256 currentDebt = market.getUserTotalDebt(user);
         // uint256 debtInUSD = market._loanDebtInUSD(currentDebt); // convert to USD
         // uint256 collateralValue = market.getUserTotalCollateralValue(user); // in USD terms
         // console.log("collateral value ", collateralValue);
@@ -786,9 +780,6 @@ contract MarketTest is Test {
         uint256 collateralValue = market.getUserTotalCollateralValue(user);
         console.log("Collateral value:", collateralValue);
         vm.stopPrank();
-
-        uint256 availableBorrowingPower1 = market._getMaxBorrowingPower(user);
-        console.log("Available borrowing Power 1:", availableBorrowingPower1);
 
         // User borrows for the first time
         vm.startPrank(user);

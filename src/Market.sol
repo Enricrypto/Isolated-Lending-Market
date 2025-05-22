@@ -794,4 +794,16 @@ contract Market is ReentrancyGuard {
     ) external returns (uint256 totalLiquidated, uint256 remainingToSeizeUsd) {
         return _seizeCollateral(user, liquidator, collateralToLiquidateUsd);
     }
+
+    function getUserTotalDebt(
+        address user
+    ) public view returns (uint256 totalDebt) {
+        return _getUserTotalDebt(user);
+    }
+
+    function getBorrowerInterestAccrued(
+        address borrower
+    ) public view returns (uint256 interestAccrued) {
+        return _borrowerInterestAccrued(borrower);
+    }
 }

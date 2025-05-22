@@ -208,14 +208,8 @@ contract Market is ReentrancyGuard {
         // Revert the change if not healthy
         userCollateralBalances[msg.sender][token] += amount;
 
+        // Users can withdraw paused collateral as long as the position remains healthy.
         require(stillHealthy, "Withdrawal would make position unhealthy");
-
-        // If user is withdrawing paused collateral. Users can't use paused collateral to keep a debt open.
-        // But they can withdraw it once they repay everything.
-        require(
-            !depositsPaused[token] || userTotalDebt[msg.sender] == 0,
-            "Cannot withdraw paused collateral while in debt"
-        );
 
         require(
             IERC20(token).balanceOf(address(this)) >= amount,

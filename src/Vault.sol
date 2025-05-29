@@ -7,28 +7,37 @@ import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import "lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
 import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import "./Market.sol";
+import "./StrategyManager.sol";
 
 contract Vault is ERC4626, ReentrancyGuard {
     using Math for uint256;
 
+    Market public market; // Store the market
+    StrategyManager public strategyManager; // store Idle Strategy Manager
+    address public owner;
+
+    uint256 public maxUtilizationBps = 8000; // Default to 80% of idle funds
+
     //Events
     event BorrowedByMarket(address indexed market, uint256 amount);
     event RepaidToVault(address indexed market, uint256 amount);
-
-    Market public market; // Store the market
-    address public owner;
+    event IdleDeployed(address indexed strategy, uint256 amount);
+    event MaxUtilizationUpdated(uint256 newBps);
 
     constructor(
         IERC20 _asset,
         address _marketContract,
+        address _strategyManager,
         string memory _name, // name of the vault share token
         string memory _symbol // symbol of the vault share token
     ) ERC20(_name, _symbol) ERC4626(IERC20(_asset)) {
-        owner = msg.sender;
         require(address(_asset) != address(0), "Invalid asset address");
-        if (_marketContract != address(0)) {
-            market = Market(_marketContract);
-        }
+        require(_marketContract != address(0), "Invalid market address");
+        require(_strategyManager != address(0), "Invalid strategy manager");
+
+        owner = msg.sender;
+        market = Market(_marketContract);
+        strategyManager = StrategyManager(_strategyManager);
     }
 
     modifier onlyOwner() {
@@ -40,10 +49,12 @@ contract Vault is ERC4626, ReentrancyGuard {
     }
 
     modifier onlyMarket() {
-        require(
-            msg.sender == address(market),
-            "Only Market contract can execute this function"
-        );
+        require(msg.sender == address(market), "Not authorized");
+        _;
+    }
+
+    modifier onlyStrategyManager() {
+        require(msg.sender == address(strategyManager), "Not authorized");
         _;
     }
 
@@ -63,7 +74,7 @@ contract Vault is ERC4626, ReentrancyGuard {
         return super.withdraw(amount, receiver, user);
     }
 
-    // Admin function to borrow tokens, only callable by the market contract
+    // Admin function to borrow tokens, only callable by the market contract or strategy manager
     function adminBorrow(uint256 amount) external nonReentrant onlyMarket {
         // Transfer tokens directly from vault to market (without burning shares)
         bool success = IERC20(asset()).transfer(msg.sender, amount);
@@ -86,6 +97,25 @@ contract Vault is ERC4626, ReentrancyGuard {
         emit RepaidToVault(msg.sender, amount);
     }
 
+    // function for strategies to pull idle assets
+    function withdrawIdle(uint256 amount) external onlyStrategyManager {
+        uint256 idleDeployed = strategyManager.getDeployedBalance(
+            address(this)
+        );
+        uint256 maxTotalDeployed = ((totalIdle() + idleDeployed) *
+            maxUtilizationBps) / 100;
+        require(
+            idleDeployed + amount <= maxTotalDeployed,
+            "Exceeds strategy cap"
+        );
+        require(
+            IERC20(asset()).transfer(msg.sender, amount),
+            "Transfer failed"
+        );
+
+        emit IdleDeployed(msg.sender, amount);
+    }
+
     function totalAssets() public view override returns (uint256) {
         // Retrieves the idle (not lent) assets in the Vault.
         uint256 idleAssets = totalIdle();
@@ -93,8 +123,13 @@ contract Vault is ERC4626, ReentrancyGuard {
         // Adds the borrowed assets, including interests owed to the platform
         uint256 borrowedAssets = market.totalBorrowsWithInterest();
 
-        // Return the total assets including borrowed amounts
-        return idleAssets + borrowedAssets;
+        // Add Idle deployed by Strategy Manager to generate yield
+        uint256 idleDeployed = strategyManager.getDeployedBalance(
+            address(this)
+        );
+
+        // Return the total assets including borrowed amounts and idle deployed
+        return idleAssets + borrowedAssets + idleDeployed;
     }
 
     function totalIdle() public view returns (uint256) {
@@ -151,5 +186,16 @@ contract Vault is ERC4626, ReentrancyGuard {
         );
 
         market = newMarket;
+    }
+
+    function setStrategyManager(address _strategyManager) external onlyOwner {
+        require(_strategyManager != address(0), "Invalid address");
+        strategyManager = StrategyManager(_strategyManager);
+    }
+
+    function setMaxUtilizationBps(uint256 newBps) external onlyOwner {
+        require(newBps <= 10_000, "Invalid BPS");
+        maxUtilizationBps = newBps;
+        emit MaxUtilizationUpdated(newBps);
     }
 }

@@ -4,6 +4,7 @@ The Isolated Lending Market Protocol is a modular, extendable, and permissionles
 # Key Features
 ERC-4626 Vault Implementation
 The protocol uses the ERC-4626 standard for vaults, enabling seamless management of assets and vault shares. Users can deposit and withdraw assets within the vaults, receiving shares that represent their stake in the vault.
+Note: This vault supports internal lending. For full economic accounting (including borrowed funds), use totalBackingAssets(). Standard ERC4626 integrations should use totalAssets() which excludes borrowed funds.
 
 # Collateral Management
 Users can deposit collateral into the market for borrowing. Collateral is tracked per-user and per-collateral-token basis. The protocol calculates the maximum borrowing power based on collateral value and a predefined Loan-to-Value (LTV) ratio. The protocol also tracks collateral utilization to help users monitor their risk levels.

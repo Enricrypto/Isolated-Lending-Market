@@ -374,7 +374,7 @@ contract Market is ReentrancyGuard {
 
     // Function to calculate lending rate
     function getLendingRate() external view returns (uint256) {
-        uint256 totalSupply = vaultContract.totalAssets();
+        uint256 totalSupply = vaultContract.totalEffectiveAssets();
         if (totalSupply == 0) return 0;
 
         uint256 utilization = Math.mulDiv(totalBorrows, 1e18, totalSupply);
@@ -424,6 +424,7 @@ contract Market is ReentrancyGuard {
         }
     }
 
+    //  move the comditio to the function on top
     function _getUserBorrowableCollateralValue(
         address user
     ) internal view returns (uint256 totalValue) {
@@ -503,7 +504,7 @@ contract Market is ReentrancyGuard {
         }
 
         uint256 totalBorrowed = totalBorrows; // Total outstanding borrows
-        uint256 totalSupply = vaultContract.totalAssets(); // Total assets backing the system
+        uint256 totalSupply = vaultContract.totalEffectiveAssets(); // Total assets backing the system
 
         // Skip if no borrows or no liquidity
         if (totalBorrowed == 0 || totalSupply == 0) {

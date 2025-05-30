@@ -78,7 +78,7 @@ contract InterestRateModel {
 
     // Not including interest rates as it isn't available liquidity
     function getTotalAssets() public view returns (uint256) {
-        return vaultContract.totalIdle() + getTotalBorrows();
+        return vaultContract.totalStrategyAssets() + getTotalBorrows();
     }
 
     // Calculate utilization rate: U = totalBorrows / totalAssets

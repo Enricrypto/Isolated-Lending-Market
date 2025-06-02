@@ -237,7 +237,7 @@ contract Market is ReentrancyGuard {
         _updateGlobalBorrowIndex();
 
         // Collateral value doesn't include paused collateral tokens
-        uint256 collateralValue = _getUserBorrowableCollateralValue(msg.sender);
+        uint256 collateralValue = _getUserTotalCollateralValue(msg.sender);
         uint256 newDebt = _getUserTotalDebt(msg.sender) + amount;
         uint256 borrowingPower = Math.mulDiv(
             collateralValue,
@@ -410,22 +410,6 @@ contract Market is ReentrancyGuard {
 
     // Returns the total value (in USD) of all collateral a user has deposited
     function _getUserTotalCollateralValue(
-        address user
-    ) internal view returns (uint256 totalValue) {
-        address[] memory tokens = userCollateralAssets[user];
-
-        for (uint i = 0; i < tokens.length; i++) {
-            address token = tokens[i];
-            uint256 amount = userCollateralBalances[user][token];
-
-            if (amount > 0) {
-                totalValue += _getTokenValueInUSD(token, amount);
-            }
-        }
-    }
-
-    //  move the comditio to the function on top
-    function _getUserBorrowableCollateralValue(
         address user
     ) internal view returns (uint256 totalValue) {
         address[] memory tokens = userCollateralAssets[user];

@@ -1,158 +1,166 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-// import "lib/forge-std/src/Test.sol";
-// import "lib/forge-std/src/console.sol";
-// import "../src/Market.sol";
-// import "../src/Vault.sol";
-// import "../src/PriceOracle.sol";
-// import "../src/InterestRateModel.sol";
-// import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
+import "lib/forge-std/src/Test.sol";
+import "lib/forge-std/src/console.sol";
+import "../src/Market.sol";
+import "../src/Vault.sol";
+import "../src/PriceOracle.sol";
+import "../src/InterestRateModel.sol";
+import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 
-// contract MarketTest is Test {
-//     Vault public vault;
-//     Market public market;
-//     PriceOracle public priceOracle;
-//     InterestRateModel public interestRateModel;
-//     address public user;
-//     address public lender;
-//     address public liquidator;
-//     IERC20 public dai; // testing with DAI as the loan asset
-//     IERC20 public weth; // collateral asset
-//     address public wethPrice;
-//     address public daiPrice;
+contract MarketTest is Test {
+    Vault public vault;
+    Market public market;
+    PriceOracle public priceOracle;
+    InterestRateModel public interestRateModel;
+    address public user;
+    address public lender;
+    address public liquidator;
+    IERC20 public dai; // testing with DAI as the loan asset
+    IERC20 public weth; // collateral asset
+    address public wethPrice;
+    address public daiPrice;
 
-//     address protocolTreasury = 0x1234567890AbcdEF1234567890aBcdef12345678;
-//     address daiAddress = 0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1; // DAI address on Arbitrum
-//     address wethAddress = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH address on Arbitrum
-//     address wethPriceAddress = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // WETH price feed address on Arbitrum
-//     address daiPriceAddress = 0xc5C8E77B397E531B8EC06BFb0048328B30E9eCfB; // DAI price feed address on Arbitrum; // DAI address on Arbitrum
+    address protocolTreasury = 0x1234567890AbcdEF1234567890aBcdef12345678;
+    address daiAddress = 0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1; // DAI address on Arbitrum
+    address wethAddress = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH address on Arbitrum
+    address wethPriceAddress = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // WETH price feed address on Arbitrum
+    address daiPriceAddress = 0xc5C8E77B397E531B8EC06BFb0048328B30E9eCfB; // DAI price feed address on Arbitrum; // DAI address on Arbitrum
+    address yearnDaiStrategy = 0x7C1e99564aebDcCf08a3C8D07797BfcC5960f0C1;
 
-//     uint256 public initialDeposit = 5000 * 1e18; // 5000 tokens
-//     uint256 public initialBalance = 10000 * 1e18; // 10000 DAI for user
-//     uint256 public wethAmount = 5000 * 1e18; // 5000 WETH transfer to user
-//     uint256 public initialLiquidatorBalance = 8000 * 1e18; // 8000 DAI for user
+    uint256 public initialDeposit = 5000 * 1e18; // 5000 tokens
+    uint256 public initialBalance = 10000 * 1e18; // 10000 DAI for user
+    uint256 public wethAmount = 5000 * 1e18; // 5000 WETH transfer to user
+    uint256 public initialLiquidatorBalance = 8000 * 1e18; // 8000 DAI for user
 
-//     function setUp() public {
-//         // Fork the Arbitrum mainnet at the latest block
-//         vm.createSelectFork(
-//             "https://arb-mainnet.g.alchemy.com/v2/ADLPIIv6SUjhmaoJYxWLHKDUDaw8RnRj",
-//             312132545
-//         );
+    function setUp() public {
+        // Fork the Arbitrum mainnet at the latest block
+        vm.createSelectFork(
+            "https://arb-mainnet.g.alchemy.com/v2/ADLPIIv6SUjhmaoJYxWLHKDUDaw8RnRj",
+            312132545
+        );
 
-//         // Initialize the DAI and WETH instance
-//         dai = IERC20(daiAddress);
-//         weth = IERC20(wethAddress);
+        // Initialize the DAI and WETH instance
+        dai = IERC20(daiAddress);
+        weth = IERC20(wethAddress);
 
-//         // Initialize price feed addresses
-//         wethPrice = wethPriceAddress;
-//         daiPrice = daiPriceAddress;
+        // Initialize price feed addresses
+        wethPrice = wethPriceAddress;
+        daiPrice = daiPriceAddress;
 
-//         // InterestRateModel parameters
-//         uint256 baseRate = 0.02e18; // 2% base rate
-//         uint256 optimalUtilization = 0.8e18; // 80% optimal utilization
-//         uint256 slope1 = 0.1e18; // 10% slope1
-//         uint256 slope2 = 0.5e18; // 50% slope2
+        // InterestRateModel parameters
+        uint256 baseRate = 0.02e18; // 2% base rate
+        uint256 optimalUtilization = 0.8e18; // 80% optimal utilization
+        uint256 slope1 = 0.1e18; // 10% slope1
+        uint256 slope2 = 0.5e18; // 50% slope2
 
-//         // Deploy contracts
-//         vault = new Vault(dai, address(0), "Vault Dai", "VDAI");
+        // Deploy contracts
+        vault = new Vault(
+            dai,
+            address(0),
+            yearnDaiStrategy,
+            "Vault Dai",
+            "VDAI"
+        );
 
-//         interestRateModel = new InterestRateModel(
-//             baseRate,
-//             optimalUtilization,
-//             slope1,
-//             slope2,
-//             address(vault), // Vault contract address
-//             address(0) // Placeholder market address
-//         );
+        interestRateModel = new InterestRateModel(
+            baseRate,
+            optimalUtilization,
+            slope1,
+            slope2,
+            address(vault), // Vault contract address
+            address(0) // Placeholder market address
+        );
 
-//         priceOracle = new PriceOracle();
+        priceOracle = new PriceOracle();
 
-//         market = new Market(
-//             address(protocolTreasury),
-//             address(vault),
-//             address(priceOracle),
-//             address(interestRateModel),
-//             address(dai)
-//         );
+        market = new Market(
+            address(protocolTreasury),
+            address(vault),
+            address(priceOracle),
+            address(interestRateModel),
+            address(dai)
+        );
 
-//         // Set the price feeds in the Oracle (using addPriceFeed function)
-//         priceOracle.addPriceFeed(address(weth), wethPrice); // Register WETH price feed
-//         priceOracle.addPriceFeed(address(dai), daiPrice); // Register DAI price feed
+        // Set the price feeds in the Oracle (using addPriceFeed function)
+        priceOracle.addPriceFeed(address(weth), wethPrice); // Register WETH price feed
+        priceOracle.addPriceFeed(address(dai), daiPrice); // Register DAI price feed
 
-//         // Set the correct market address in Vault
-//         vault.setMarket(address(market));
+        // Set the correct market address in Vault
+        vault.setMarket(address(market));
 
-//         // Set the correct market address in InterestRateModel
-//         interestRateModel.setMarketContract(address(market));
+        // Set the correct market address in InterestRateModel
+        interestRateModel.setMarketContract(address(market));
 
-//         // Set up account
-//         user = address(0x123);
-//         lender = address(0x124);
-//         liquidator = address(0x125);
+        // Set up account
+        user = address(0x123);
+        lender = address(0x124);
+        liquidator = address(0x125);
 
-//         // send some Ether to the user for gas
-//         vm.deal(user, 10 ether);
+        // send some Ether to the user for gas
+        vm.deal(user, 10 ether);
 
-//         // Impersonate a DAI whale to send tokens to the lender
-//         address daiWhale = 0xd85E038593d7A098614721EaE955EC2022B9B91B; // Replace with a valid DAI whale address
-//         vm.startPrank(daiWhale);
-//         dai.transfer(lender, initialBalance); // Transfer 10,000 DAI to user
-//         vm.stopPrank();
+        // Impersonate a DAI whale to send tokens to the lender
+        address daiWhale = 0xd85E038593d7A098614721EaE955EC2022B9B91B; // Replace with a valid DAI whale address
+        vm.startPrank(daiWhale);
+        dai.transfer(lender, initialBalance); // Transfer 10,000 DAI to user
+        vm.stopPrank();
 
-//         // Impersonate a WETH whale to send tokens to the user
-//         address wethWhale = 0xC6962004f452bE9203591991D15f6b388e09E8D0; // Replace with a valid WETH whale address
-//         vm.startPrank(wethWhale);
-//         weth.transfer(user, wethAmount); // Transfer 5,000 WETH to user
-//         vm.stopPrank();
+        // Impersonate a WETH whale to send tokens to the user
+        address wethWhale = 0xC6962004f452bE9203591991D15f6b388e09E8D0; // Replace with a valid WETH whale address
+        vm.startPrank(wethWhale);
+        weth.transfer(user, wethAmount); // Transfer 5,000 WETH to user
+        vm.stopPrank();
 
-//         // Impersonate a DAI whale to send tokens to the liquidator
-//         vm.startPrank(daiWhale);
-//         dai.transfer(liquidator, initialLiquidatorBalance); // Transfer 10,000 DAI to user
-//         vm.stopPrank();
+        // Impersonate a DAI whale to send tokens to the liquidator
+        vm.startPrank(daiWhale);
+        dai.transfer(liquidator, initialLiquidatorBalance); // Transfer 10,000 DAI to user
+        vm.stopPrank();
 
-//         // Approve the vault contract for the lender to deposit DAI
-//         vm.startPrank(lender);
-//         dai.approve(address(vault), type(uint256).max); // Approve max amount
-//         vm.stopPrank();
+        // Approve the vault contract for the lender to deposit DAI
+        vm.startPrank(lender);
+        dai.approve(address(vault), type(uint256).max); // Approve max amount
+        vm.stopPrank();
 
-//         // Approve the market contract for the user to use WETH as collateral
-//         vm.startPrank(user);
-//         weth.approve(address(market), type(uint256).max);
-//         vm.stopPrank();
-//         console.log("Owner:", address(this));
+        // Approve the market contract for the user to use WETH as collateral
+        vm.startPrank(user);
+        weth.approve(address(market), type(uint256).max);
+        vm.stopPrank();
+        console.log("Owner:", address(this));
 
-//         // Approve the market contract for the user to deposit DAI (repay)
-//         vm.startPrank(user);
-//         dai.approve(address(market), type(uint256).max);
-//         vm.stopPrank();
+        // Approve the market contract for the user to deposit DAI (repay)
+        vm.startPrank(user);
+        dai.approve(address(market), type(uint256).max);
+        vm.stopPrank();
 
-//         //Approve the market contract for liquidator to transfer DAI (liquidator repayment)
-//         vm.startPrank(liquidator);
-//         dai.approve(address(market), type(uint256).max);
-//         vm.stopPrank();
+        //Approve the market contract for liquidator to transfer DAI (liquidator repayment)
+        vm.startPrank(liquidator);
+        dai.approve(address(market), type(uint256).max);
+        vm.stopPrank();
 
-//         // Simulate the vault contract approving the market contract
-//         vm.startPrank(address(market));
-//         dai.approve(address(vault), type(uint256).max);
-//         vm.stopPrank();
+        // Simulate the vault contract approving the market contract
+        vm.startPrank(address(market));
+        dai.approve(address(vault), type(uint256).max);
+        vm.stopPrank();
 
-//         // Set the market parameters (these can be whatever defaults you want for most tests)
-//         uint256 lltv = 0.8e18; // 80%
-//         uint256 liquidationPenalty = 0.05e18; // 5%
-//         uint256 protocolFeeRate = 1e17; // 10% protocol fee rate
+        // Set the market parameters (these can be whatever defaults you want for most tests)
+        uint256 lltv = 0.8e18; // 80%
+        uint256 liquidationPenalty = 0.05e18; // 5%
+        uint256 protocolFeeRate = 1e17; // 10% protocol fee rate
 
-//         vm.startPrank(address(this)); // Make sure you act as the admin/owner here
-//         market.setMarketParameters(lltv, liquidationPenalty, protocolFeeRate);
-//         vm.stopPrank();
-//     }
+        vm.startPrank(address(this)); // Make sure you act as the admin/owner here
+        market.setMarketParameters(lltv, liquidationPenalty, protocolFeeRate);
+        vm.stopPrank();
+    }
+}
 
-//     // Function to retrieve the current price of WETH in USD
-//     function testGetWethPrice() public view returns (int256) {
-//         // Fetch the latest price of WETH in USD from the PriceOracle
-//         int256 wethPriceInUSD = priceOracle.getLatestPrice(address(weth));
-//         return wethPriceInUSD;
-//     }
+// Function to retrieve the current price of WETH in USD
+function testGetWethPrice() public view returns (int256) {
+    // Fetch the latest price of WETH in USD from the PriceOracle
+    int256 wethPriceInUSD = priceOracle.getLatestPrice(address(weth));
+    return wethPriceInUSD;
+}
 
 //     // Test the setMarketParameters function
 //     function testSetMarketParameters() public {

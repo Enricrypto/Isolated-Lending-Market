@@ -18,19 +18,19 @@ contract Vault is ERC4626, ReentrancyGuard {
     //Events
     event BorrowedByMarket(address indexed market, uint256 amount);
     event RepaidToVault(address indexed market, uint256 amount);
+    event StrategyChanged(address oldStrategy, address newStrategy);
+    event MarketOwnerChanged(address oldOwner, address newOwner);
 
     constructor(
         IERC20 _asset,
         address _marketContract,
         address _strategy, // The initial strategy vault to deposit into
-        address _marketOwner, // Creator of this market/vault
         string memory _name, // Vault token name
         string memory _symbol // Vault token symbol
     ) ERC20(_name, _symbol) ERC4626(IERC20(_asset)) {
         require(address(_asset) != address(0), "Invalid asset address");
         require(_marketContract != address(0), "Invalid market address");
         require(_strategy != address(0), "Invalid strategy");
-        require(_marketOwner != address(0), "Invalid market owner");
         // Check that the strategy vault's underlying asset matches this vault's asset
         require(
             ERC4626(_strategy).asset() == _asset,
@@ -39,7 +39,7 @@ contract Vault is ERC4626, ReentrancyGuard {
 
         market = Market(_marketContract);
         strategy = ERC4626(_strategy);
-        marketOwner = _marketOwner;
+        marketOwner = msg.sender;
 
         // Approve strategy to pull tokens from this vault
         IERC20(_asset).approve(strategy, type(uint256).max);
@@ -110,7 +110,6 @@ contract Vault is ERC4626, ReentrancyGuard {
 
         // After deposit, if a strategy is set, forward the assets to it
         if (address(strategy) != address(0)) {
-            IERC20(asset()).approve(address(strategy), amount);
             // Vault receives shares from strategy that represent a claim on the assets.
             strategy.deposit(amount, address(this));
         }
@@ -154,7 +153,6 @@ contract Vault is ERC4626, ReentrancyGuard {
 
         // If a strategy is set, forward the funds to it
         if (address(strategy) != address(0)) {
-            IERC20(asset()).approve(address(strategy), amount);
             strategy.deposit(amount, address(this));
         }
 
@@ -205,5 +203,9 @@ contract Vault is ERC4626, ReentrancyGuard {
         address shareOwner
     ) public override nonReentrant returns (uint256 assets) {
         return super.redeem(shares, receiver, shareOwner);
+    }
+
+    function getStrategy() external view returns (address) {
+        return address(strategy);
     }
 }

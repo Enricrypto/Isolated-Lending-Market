@@ -5,4 +5,6 @@ libs = ["lib"]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 
-mainnet = "${ARB_RPC_URL}"  # Change this to your actual RPC endpoint URL if needed
+[rpc_endpoints]
+mainnet = "${MAINNET_RPC_URL}"
+

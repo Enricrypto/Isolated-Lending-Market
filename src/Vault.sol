@@ -160,10 +160,6 @@ contract Vault is ERC4626, ReentrancyGuard {
     }
 
     function totalAssets() public view override returns (uint256) {
-        return totalStrategyAssets();
-    }
-
-    function totalEffectiveAssets() public view returns (uint256) {
         return totalStrategyAssets() + market.totalBorrowsWithInterest();
     }
 
@@ -172,7 +168,11 @@ contract Vault is ERC4626, ReentrancyGuard {
         return strategy.convertToAssets(strategy.balanceOf(address(this)));
     }
 
-    // CHECK FROM HERE
+    // Covers what the strategy can immediately redeem
+    function availableLiquidity() public view returns (uint256) {
+        return strategy.maxWithdraw(address(this));
+    }
+
     function maxWithdraw(address user) public view override returns (uint256) {
         uint256 strategyAssets = totalStrategyAssets(); // Total assets available (fully deployed)
         if (strategyAssets == 0) return 0; // no assets to withdraw

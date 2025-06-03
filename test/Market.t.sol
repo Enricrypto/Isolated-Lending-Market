@@ -23,11 +23,11 @@ contract MarketTest is Test {
     address public usdcPrice;
 
     address protocolTreasury = 0x1234567890AbcdEF1234567890aBcdef12345678;
-    address usdcAddress = 0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8; // USDC address on Arbitrum
-    address wethAddress = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH address on Arbitrum
-    address wethPriceAddress = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // WETH price feed address on Arbitrum
-    address usdcPriceAddress = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3; // USDC price feed address on Arbitrum;
-    address aaveStrategy = 0xDAF2D8AAc9174B1168b9f78075FE64a04bae197B;
+    address usdcAddress = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48; // USDC address on Ethereum
+    address wethAddress = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH address on Ethereum
+    address wethPriceAddress = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419; // ETH price feed address on Ethereum
+    address usdcPriceAddress = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6; // USDC price feed address on Ethereum
+    address yearnUsdcStrategy = 0xBe53A109B494E5c9f97b9Cd39Fe969BE68BF6204;
 
     uint256 public initialDeposit = 5000 * 1e18; // 5000 tokens
     uint256 public initialBalance = 10000 * 1e6; // 10000 USDC for user
@@ -35,11 +35,8 @@ contract MarketTest is Test {
     uint256 public initialLiquidatorBalance = 8000 * 1e6; // 8000 USDC for user
 
     function setUp() public {
-        // Fork the Arbitrum mainnet at the latest block
-        vm.createSelectFork(
-            "https://arb-mainnet.g.alchemy.com/v2/ADLPIIv6SUjhmaoJYxWLHKDUDaw8RnRj",
-            312132545
-        );
+        // Fork the Ethereum mainnet at the latest block
+        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"));
 
         // Initialize the DAI and WETH instance
         usdc = IERC20(usdcAddress);
@@ -59,7 +56,7 @@ contract MarketTest is Test {
         vault = new Vault(
             usdc,
             address(0),
-            aaveStrategy,
+            yearnUsdcStrategy,
             "Vault USDC",
             "VUSDC"
         );
@@ -102,13 +99,13 @@ contract MarketTest is Test {
         vm.deal(user, 10 ether);
 
         // Impersonate a USDC whale to send tokens to the lender
-        address usdcWhale = 0x1eED63EfBA5f81D95bfe37d82C8E736b974F477b; // Replace with a valid USDC whale address
+        address usdcWhale = 0xaD354CfBAa4A8572DD6Df021514a3931A8329Ef5; // Replace with a valid USDC whale address
         vm.startPrank(usdcWhale);
         usdc.transfer(lender, initialBalance); // Transfer 10,000 USDC to user
         vm.stopPrank();
 
         // Impersonate a WETH whale to send tokens to the user
-        address wethWhale = 0xC6962004f452bE9203591991D15f6b388e09E8D0; // Replace with a valid WETH whale address
+        address wethWhale = 0xF04a5cC80B1E94C69B48f5ee68a08CD2F09A7c3E; // Replace with a valid WETH whale address
         vm.startPrank(wethWhale);
         weth.transfer(user, wethAmount); // Transfer 5,000 WETH to user
         vm.stopPrank();
@@ -160,299 +157,273 @@ contract MarketTest is Test {
         int256 wethPriceInUSD = priceOracle.getLatestPrice(address(weth));
         return wethPriceInUSD;
     }
+
+    // Test the setMarketParameters function
+    function testSetMarketParameters() public {
+        // Define new parameters to test
+        uint256 lltv = 0.8e18; // Example: 80% liquidation loan-to-value
+        uint256 liquidationPenalty = 0.05e18; // Example: 5% liquidation penalty
+        uint256 protocolFeeRate = 1e17; // 10% fee rate
+
+        // Call the setMarketParameters function to update the parameters
+        vm.startPrank(address(this));
+        market.setMarketParameters(lltv, liquidationPenalty, protocolFeeRate);
+
+        // Fetch the market parameters from the contract by destructuring the struct
+        (
+            uint256 storedLltv,
+            uint256 storedLiquidationPenalty,
+            uint256 storedProtocolFeeRate
+        ) = market.marketParams();
+        vm.stopPrank();
+
+        // Assertions to verify the parameters have been updated correctly
+        assertEq(storedLltv, lltv, "Liquidation loan-to-value mismatch");
+        assertEq(
+            storedLiquidationPenalty,
+            liquidationPenalty,
+            "Liquidation Penalty mismatch"
+        );
+        assertEq(
+            storedProtocolFeeRate,
+            protocolFeeRate,
+            "Protocol fee rate mismatch"
+        );
+    }
+
+    // Test Add Collateral Token to market
+    function testAddCollateralToken() public {
+        address collateralToken = address(weth);
+        address priceFeed = wethPrice;
+
+        vm.startPrank(address(this)); // Contract owner adds collateral and set LTV
+        market.addCollateralToken(collateralToken, priceFeed);
+        vm.stopPrank();
+
+        // Assert that the supportedCollateral mapping is now supported
+        assertEq(
+            market.supportedCollateralTokens(collateralToken),
+            true,
+            "Collateral supported by market"
+        );
+    }
+
+    function testResumeCollateralDeposits() public {
+        address collateralToken = address(weth);
+        address priceFeed = address(wethPrice);
+
+        // Add collateral token
+        vm.startPrank(address(this));
+        market.addCollateralToken(collateralToken, priceFeed);
+        vm.stopPrank();
+
+        // Pause collateral deposits
+        vm.startPrank(address(this));
+        market.pauseCollateralDeposits(collateralToken);
+        vm.stopPrank();
+
+        // Verify deposits are paused
+        assertEq(
+            market.depositsPaused(collateralToken),
+            true,
+            "Collateral deposits should be paused"
+        );
+
+        // Resume collateral deposits
+        vm.startPrank(address(this));
+        market.resumeCollateralDeposits(collateralToken);
+        vm.stopPrank();
+
+        // Assert that depositsPaused is now false
+        assertEq(
+            market.depositsPaused(collateralToken),
+            false,
+            "Collateral deposits should be resumed"
+        );
+
+        // Ensure deposits now works
+        vm.startPrank(user);
+        market.depositCollateral(collateralToken, 100 * 1e18);
+        vm.stopPrank();
+    }
+
+    function testRemoveCollateralToken() public {
+        address collateralToken = address(weth);
+        address priceFeed = address(wethPrice);
+
+        // add Collateral Token
+        vm.startPrank(address(this));
+        market.addCollateralToken(collateralToken, priceFeed);
+        vm.stopPrank();
+
+        // Pause collateral deposits
+        vm.startPrank(address(this));
+        market.pauseCollateralDeposits(collateralToken);
+        vm.stopPrank();
+
+        // Ensure no collateral is locked, mock the call
+        vm.mockCall(
+            address(market),
+            abi.encodeWithSignature(
+                "_getTotalCollateralLocked(address)",
+                collateralToken
+            ), // Function signature + argument
+            abi.encode(0) // Mock return value 0
+        );
+
+        // Remove the collateral token
+        vm.startPrank(address(this));
+        market.removeCollateralToken(collateralToken);
+        vm.stopPrank();
+
+        // Assert that the collateral token is no longer supported
+        assertEq(
+            market.supportedCollateralTokens(collateralToken),
+            false,
+            "Collateral token should be removed"
+        );
+    }
+
+    function testWithdrawCollateral() public {
+        address collateralToken = address(weth);
+        address priceFeed = address(wethPrice);
+        uint256 depositAmount = 1000 * 1e18;
+        uint256 withdrawAmount = 500 * 1e18;
+
+        // Add collateral token
+        vm.startPrank(address(this));
+        market.addCollateralToken(collateralToken, priceFeed);
+        vm.stopPrank();
+
+        // Ensure deposits works
+        vm.startPrank(user);
+        market.depositCollateral(collateralToken, depositAmount);
+        vm.stopPrank();
+
+        uint256 userBalanceBefore = weth.balanceOf(user);
+        uint256 marketBalanceBefore = weth.balanceOf(address(market));
+
+        vm.startPrank(user);
+        market.withdrawCollateral(collateralToken, withdrawAmount);
+        uint256 userBalanceAfter = weth.balanceOf(user);
+        uint256 marketBalanceAfter = weth.balanceOf(address(market));
+
+        assertEq(
+            userBalanceAfter,
+            userBalanceBefore + withdrawAmount,
+            "User's balance should increase after withdrawal"
+        );
+        assertEq(
+            marketBalanceAfter,
+            marketBalanceBefore - withdrawAmount,
+            "Market's balance should decrease after withdrawal"
+        );
+    }
+
+    function testBorrow() public {
+        // address loanAsset = address(dai);
+        address collateralToken = address(weth);
+        address priceFeed = address(wethPrice);
+        uint256 lentAmount = 5000 * 1e6; // 5000 USDC
+        uint256 depositAmount = 3 * 1e18; // 3 WETH
+        uint256 borrowAmount1 = 1000 * 1e6; // First borrow: 1000 USDC
+        uint256 borrowAmount2 = 500 * 1e6; // Second borrow: 500 USDC
+
+        // Lender deposits USDC into the vault
+        vm.startPrank(lender);
+        vault.deposit(lentAmount, lender);
+        vm.stopPrank();
+
+        uint256 shares = IERC20(yearnUsdcStrategy).balanceOf(address(vault));
+        console.log("Shares hold by vault after", shares);
+        uint256 usdcInStrategy = ERC4626(yearnUsdcStrategy).convertToAssets(
+            shares
+        );
+        console.log("USDC in strategy", usdcInStrategy);
+
+        uint256 vaultAssets = vault.convertToAssets(vault.totalSupply());
+        console.log("vault assets", vaultAssets);
+
+        // Add collateral token to the market
+        vm.startPrank(address(this));
+        market.addCollateralToken(collateralToken, priceFeed);
+        vm.stopPrank();
+
+        // User deposits collateral into the market
+        vm.startPrank(user);
+        market.depositCollateral(collateralToken, depositAmount);
+        vm.stopPrank();
+
+        // First borrow
+        vm.startPrank(user);
+        market.borrow(borrowAmount1);
+        vm.stopPrank();
+
+        // Simulate time passing to trigger interest accrual
+        uint256 timeToAdvance = 5 days;
+        vm.warp(block.timestamp + timeToAdvance);
+
+        // Update interest and global borrow index without user interaction
+        market.updateGlobalBorrowIndex();
+
+        //     uint256 globalBorrowIndex2 = market.globalBorrowIndex();
+        //     console.log("global borrow index 2", globalBorrowIndex2);
+
+        //     uint256 totalBorrowed = market.totalBorrows();
+        //     console.log("total borrows:", totalBorrowed);
+
+        //     uint256 totalSupply = vault.totalAssets();
+        //     console.log("Total supply:", totalSupply);
+
+        //     uint256 dynamicBorrowRate = interestRateModel.getDynamicBorrowRate();
+        //     console.log("Dynamic borrow rate:", dynamicBorrowRate);
+
+        //     // Update interest and global borrow index without user interaction
+        //     market.updateGlobalBorrowIndex();
+
+        //     uint256 globalBorrowIndex3 = market.globalBorrowIndex();
+        //     console.log("global borrow index 3", globalBorrowIndex3);
+
+        //     uint256 userDebtAfterUpdate = market.getUserTotalDebt(user);
+
+        //     // Assert first update is updating user's debt correctly
+        //     assertGt(
+        //         userDebtAfterUpdate,
+        //         userDebtAfterBorrow1,
+        //         "User's debt should increase after first update"
+        //     );
+
+        //     // Ensure global borrow index increased
+        //     assertGt(
+        //         globalBorrowIndex2,
+        //         globalBorrowIndex1,
+        //         "Global borrow index should increase after interest accrual"
+        //     );
+
+        //     // Second borrow
+        //     vm.startPrank(user);
+        //     market.borrow(borrowAmount2);
+        //     vm.stopPrank();
+
+        //     uint256 userDebtAfterBorrow2 = market.getUserTotalDebt(user);
+        //     uint256 totalExpectedDebt = borrowAmount1 + borrowAmount2;
+
+        //     // Assert total debt is updated after the second borrow
+        //     assertGt(
+        //         userDebtAfterBorrow2,
+        //         userDebtAfterUpdate,
+        //         "User's total debt should increase after second borrow"
+        //     );
+
+        //     // Assert vault balance decreases by the total borrowed amount
+        //     uint256 vaultBalanceAfter = usdc.balanceOf(address(vault));
+        //     assertEq(
+        //         vaultBalanceAfter,
+        //         vaultBalanceBefore - totalExpectedDebt,
+        //         "Vault's USDC balance should decrease by the total borrowed amount"
+        //     );
+    }
 }
-
-//     // Test the setMarketParameters function
-//     function testSetMarketParameters() public {
-//         // Define new parameters to test
-//         uint256 lltv = 0.8e18; // Example: 80% liquidation loan-to-value
-//         uint256 liquidationPenalty = 0.05e18; // Example: 5% liquidation penalty
-//         uint256 protocolFeeRate = 1e17; // 10% fee rate
-
-//         // Call the setMarketParameters function to update the parameters
-//         vm.startPrank(address(this));
-//         market.setMarketParameters(lltv, liquidationPenalty, protocolFeeRate);
-
-//         // Fetch the market parameters from the contract by destructuring the struct
-//         (
-//             uint256 storedLltv,
-//             uint256 storedLiquidationPenalty,
-//             uint256 storedProtocolFeeRate
-//         ) = market.marketParams();
-//         vm.stopPrank();
-
-//         // Assertions to verify the parameters have been updated correctly
-//         assertEq(storedLltv, lltv, "Liquidation loan-to-value mismatch");
-//         assertEq(
-//             storedLiquidationPenalty,
-//             liquidationPenalty,
-//             "Liquidation Penalty mismatch"
-//         );
-//         assertEq(
-//             storedProtocolFeeRate,
-//             protocolFeeRate,
-//             "Protocol fee rate mismatch"
-//         );
-//     }
-
-//     // Test Add Collateral Token to market
-//     function testAddCollateralToken() public {
-//         address collateralToken = address(weth);
-//         address priceFeed = wethPrice;
-
-//         vm.startPrank(address(this)); // Contract owner adds collateral and set LTV
-//         market.addCollateralToken(collateralToken, priceFeed);
-//         vm.stopPrank();
-
-//         // Assert that the supportedCollateral mapping is now supported
-//         assertEq(
-//             market.supportedCollateralTokens(collateralToken),
-//             true,
-//             "Collateral supported by market"
-//         );
-//     }
-
-//     function testPauseCollateralDeposits() public {
-//         address collateralToken = address(weth);
-//         address priceFeed = address(wethPrice);
-
-//         // Add collateral token
-//         vm.startPrank(address(this));
-//         market.addCollateralToken(collateralToken, priceFeed);
-//         vm.stopPrank();
-
-//         // Pause collateral deposits
-//         vm.startPrank(address(this));
-//         market.pauseCollateralDeposits(collateralToken);
-//         vm.stopPrank();
-
-//         assertEq(
-//             market.depositsPaused(collateralToken),
-//             true,
-//             "Collateral deposits should be paused"
-//         );
-//     }
-
-//     function testResumeCollateralDeposits() public {
-//         address collateralToken = address(weth);
-//         address priceFeed = address(wethPrice);
-
-//         // Add collateral token
-//         vm.startPrank(address(this));
-//         market.addCollateralToken(collateralToken, priceFeed);
-//         vm.stopPrank();
-
-//         // Pause collateral deposits
-//         vm.startPrank(address(this));
-//         market.pauseCollateralDeposits(collateralToken);
-//         vm.stopPrank();
-
-//         // Verify deposits are paused
-//         assertEq(
-//             market.depositsPaused(collateralToken),
-//             true,
-//             "Collateral deposits should be paused"
-//         );
-
-//         // Resume collateral deposits
-//         vm.startPrank(address(this));
-//         market.resumeCollateralDeposits(collateralToken);
-//         vm.stopPrank();
-
-//         // Assert that depositsPaused is now false
-//         assertEq(
-//             market.depositsPaused(collateralToken),
-//             false,
-//             "Collateral deposits should be resumed"
-//         );
-
-//         // Ensure deposits now works
-//         vm.startPrank(user);
-//         market.depositCollateral(collateralToken, 100 * 1e18);
-//         vm.stopPrank();
-//     }
-
-//     function testRemoveCollateralToken() public {
-//         address collateralToken = address(weth);
-//         address priceFeed = address(wethPrice);
-
-//         // add Collateral Token
-//         vm.startPrank(address(this));
-//         market.addCollateralToken(collateralToken, priceFeed);
-//         vm.stopPrank();
-
-//         // Pause collateral deposits
-//         vm.startPrank(address(this));
-//         market.pauseCollateralDeposits(collateralToken);
-//         vm.stopPrank();
-
-//         // Ensure no collateral is locked, mock the call
-//         vm.mockCall(
-//             address(market),
-//             abi.encodeWithSignature(
-//                 "_getTotalCollateralLocked(address)",
-//                 collateralToken
-//             ), // Function signature + argument
-//             abi.encode(0) // Mock return value 0
-//         );
-
-//         // Remove the collateral token
-//         vm.startPrank(address(this));
-//         market.removeCollateralToken(collateralToken);
-//         vm.stopPrank();
-
-//         // Assert that the collateral token is no longer supported
-//         assertEq(
-//             market.supportedCollateralTokens(collateralToken),
-//             false,
-//             "Collateral token should be removed"
-//         );
-//     }
-
-//     function testWithdrawCollateral() public {
-//         address collateralToken = address(weth);
-//         address priceFeed = address(wethPrice);
-//         uint256 depositAmount = 1000 * 1e18;
-//         uint256 withdrawAmount = 500 * 1e18;
-
-//         // Add collateral token
-//         vm.startPrank(address(this));
-//         market.addCollateralToken(collateralToken, priceFeed);
-//         vm.stopPrank();
-
-//         // Ensure deposits works
-//         vm.startPrank(user);
-//         market.depositCollateral(collateralToken, depositAmount);
-//         vm.stopPrank();
-
-//         uint256 userBalanceBefore = weth.balanceOf(user);
-//         uint256 marketBalanceBefore = weth.balanceOf(address(market));
-
-//         vm.startPrank(user);
-//         market.withdrawCollateral(collateralToken, withdrawAmount);
-//         uint256 userBalanceAfter = weth.balanceOf(user);
-//         uint256 marketBalanceAfter = weth.balanceOf(address(market));
-
-//         assertEq(
-//             userBalanceAfter,
-//             userBalanceBefore + withdrawAmount,
-//             "User's balance should increase after withdrawal"
-//         );
-//         assertEq(
-//             marketBalanceAfter,
-//             marketBalanceBefore - withdrawAmount,
-//             "Market's balance should decrease after withdrawal"
-//         );
-//     }
-
-//     function testBorrow() public {
-//         // address loanAsset = address(dai);
-//         address collateralToken = address(weth);
-//         address priceFeed = address(wethPrice);
-//         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
-//         uint256 depositAmount = 3 * 1e18; // 3 WETH
-//         uint256 borrowAmount1 = 1000 * 1e18; // First borrow: 1000 DAI
-//         uint256 borrowAmount2 = 500 * 1e18; // Second borrow: 500 DAI
-
-//         // Lender deposits DAI into the vault
-//         vm.startPrank(lender);
-//         vault.deposit(lentAmount, lender);
-//         vm.stopPrank();
-
-//         uint256 vaultBalanceBefore = dai.balanceOf(address(vault));
-
-//         // Add collateral token to the market
-//         vm.startPrank(address(this));
-//         market.addCollateralToken(collateralToken, priceFeed);
-//         vm.stopPrank();
-
-//         // User deposits collateral into the market
-//         vm.startPrank(user);
-//         market.depositCollateral(collateralToken, depositAmount);
-//         vm.stopPrank();
-
-//         // First borrow
-//         vm.startPrank(user);
-//         market.borrow(borrowAmount1);
-//         vm.stopPrank();
-
-//         uint256 globalBorrowIndex1 = market.globalBorrowIndex();
-//         console.log("global borrow index 1", globalBorrowIndex1);
-
-//         uint256 userDebtAfterBorrow1 = market.getUserTotalDebt(user);
-
-//         // Assert first borrow updated user's debt correctly
-//         assertEq(
-//             userDebtAfterBorrow1,
-//             borrowAmount1,
-//             "User's debt should equal the first borrowed amount"
-//         );
-
-//         // Simulate time passing to trigger interest accrual
-//         uint256 timeToAdvance = 5 days;
-//         vm.warp(block.timestamp + timeToAdvance);
-
-//         // Update interest and global borrow index without user interaction
-//         market.updateGlobalBorrowIndex();
-
-//         uint256 globalBorrowIndex2 = market.globalBorrowIndex();
-//         console.log("global borrow index 2", globalBorrowIndex2);
-
-//         uint256 totalBorrowed = market.totalBorrows();
-//         console.log("total borrows:", totalBorrowed);
-
-//         uint256 totalSupply = vault.totalAssets();
-//         console.log("Total supply:", totalSupply);
-
-//         uint256 dynamicBorrowRate = interestRateModel.getDynamicBorrowRate();
-//         console.log("Dynamic borrow rate:", dynamicBorrowRate);
-
-//         // Update interest and global borrow index without user interaction
-//         market.updateGlobalBorrowIndex();
-
-//         uint256 globalBorrowIndex3 = market.globalBorrowIndex();
-//         console.log("global borrow index 3", globalBorrowIndex3);
-
-//         uint256 userDebtAfterUpdate = market.getUserTotalDebt(user);
-
-//         // Assert first update is updating user's debt correctly
-//         assertGt(
-//             userDebtAfterUpdate,
-//             userDebtAfterBorrow1,
-//             "User's debt should increase after first update"
-//         );
-
-//         // Ensure global borrow index increased
-//         assertGt(
-//             globalBorrowIndex2,
-//             globalBorrowIndex1,
-//             "Global borrow index should increase after interest accrual"
-//         );
-
-//         // Second borrow
-//         vm.startPrank(user);
-//         market.borrow(borrowAmount2);
-//         vm.stopPrank();
-
-//         uint256 userDebtAfterBorrow2 = market.getUserTotalDebt(user);
-//         uint256 totalExpectedDebt = borrowAmount1 + borrowAmount2;
-
-//         // Assert total debt is updated after the second borrow
-//         assertGt(
-//             userDebtAfterBorrow2,
-//             userDebtAfterUpdate,
-//             "User's total debt should increase after second borrow"
-//         );
-
-//         // Assert vault balance decreases by the total borrowed amount
-//         uint256 vaultBalanceAfter = dai.balanceOf(address(vault));
-//         assertEq(
-//             vaultBalanceAfter,
-//             vaultBalanceBefore - totalExpectedDebt,
-//             "Vault's DAI balance should decrease by the total borrowed amount"
-//         );
-//     }
-
 //     function testRepay() public {
 //         address collateralToken = address(weth);
 //         address priceFeed = wethPrice;

@@ -250,7 +250,7 @@ contract Market is ReentrancyGuard {
         );
 
         require(
-            amount <= vaultContract.totalAssets(),
+            amount <= vaultContract.availableLiquidity(),
             "Insufficient vault liquidity"
         );
 
@@ -374,8 +374,8 @@ contract Market is ReentrancyGuard {
 
     // Function to calculate lending rate
     function getLendingRate() external view returns (uint256) {
-        uint256 totalSupply = vaultContract.totalEffectiveAssets();
-        if (totalSupply == 0) return 0;
+        uint256 totalAssets = vaultContract.totalAssets();
+        if (totalAssets == 0) return 0;
 
         uint256 utilization = Math.mulDiv(totalBorrows, 1e18, totalSupply);
         uint256 borrowRate = interestRateModel.getDynamicBorrowRate();
@@ -488,10 +488,10 @@ contract Market is ReentrancyGuard {
         }
 
         uint256 totalBorrowed = totalBorrows; // Total outstanding borrows
-        uint256 totalSupply = vaultContract.totalEffectiveAssets(); // Total assets backing the system
+        uint256 totalAssets = vaultContract.totalAssets(); // Total assets backing the system
 
         // Skip if no borrows or no liquidity
-        if (totalBorrowed == 0 || totalSupply == 0) {
+        if (totalBorrowed == 0 || totalAssets == 0) {
             return;
         }
 

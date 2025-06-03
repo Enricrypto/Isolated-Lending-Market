@@ -29,11 +29,10 @@ contract Vault is ERC4626, ReentrancyGuard {
         string memory _symbol // Vault token symbol
     ) ERC20(_name, _symbol) ERC4626(IERC20(_asset)) {
         require(address(_asset) != address(0), "Invalid asset address");
-        require(_marketContract != address(0), "Invalid market address");
         require(_strategy != address(0), "Invalid strategy");
         // Check that the strategy vault's underlying asset matches this vault's asset
         require(
-            ERC4626(_strategy).asset() == _asset,
+            ERC4626(_strategy).asset() == address(_asset),
             "Strategy asset mismatch"
         );
 
@@ -42,7 +41,7 @@ contract Vault is ERC4626, ReentrancyGuard {
         marketOwner = msg.sender;
 
         // Approve strategy to pull tokens from this vault
-        IERC20(_asset).approve(strategy, type(uint256).max);
+        IERC20(_asset).approve(address(strategy), type(uint256).max);
     }
 
     modifier onlyMarketOwner() {
@@ -57,7 +56,7 @@ contract Vault is ERC4626, ReentrancyGuard {
 
     // ========== Admin Functions ==========
 
-    function setMarket(address _market) external onlyMarket {
+    function setMarket(address _market) external onlyMarketOwner {
         require(address(market) == address(0), "Market already set");
         require(_market != address(0), "Invalid market address");
         Market newMarket = Market(_market);

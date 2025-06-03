@@ -250,7 +250,7 @@ contract Market is ReentrancyGuard {
         );
 
         require(
-            amount <= vaultContract.totalIdle(),
+            amount <= vaultContract.totalAssets(),
             "Insufficient vault liquidity"
         );
 

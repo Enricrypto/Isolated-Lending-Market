@@ -17,22 +17,22 @@ contract MarketTest is Test {
     address public user;
     address public lender;
     address public liquidator;
-    IERC20 public dai; // testing with DAI as the loan asset
+    IERC20 public usdc; // testing with USDC as the loan asset
     IERC20 public weth; // collateral asset
     address public wethPrice;
-    address public daiPrice;
+    address public usdcPrice;
 
     address protocolTreasury = 0x1234567890AbcdEF1234567890aBcdef12345678;
-    address daiAddress = 0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1; // DAI address on Arbitrum
+    address usdcAddress = 0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8; // USDC address on Arbitrum
     address wethAddress = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH address on Arbitrum
     address wethPriceAddress = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // WETH price feed address on Arbitrum
-    address daiPriceAddress = 0xc5C8E77B397E531B8EC06BFb0048328B30E9eCfB; // DAI price feed address on Arbitrum; // DAI address on Arbitrum
-    address yearnDaiStrategy = 0x7C1e99564aebDcCf08a3C8D07797BfcC5960f0C1;
+    address usdcPriceAddress = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3; // USDC price feed address on Arbitrum;
+    address aaveStrategy = 0xDAF2D8AAc9174B1168b9f78075FE64a04bae197B;
 
     uint256 public initialDeposit = 5000 * 1e18; // 5000 tokens
-    uint256 public initialBalance = 10000 * 1e18; // 10000 DAI for user
+    uint256 public initialBalance = 10000 * 1e6; // 10000 USDC for user
     uint256 public wethAmount = 5000 * 1e18; // 5000 WETH transfer to user
-    uint256 public initialLiquidatorBalance = 8000 * 1e18; // 8000 DAI for user
+    uint256 public initialLiquidatorBalance = 8000 * 1e6; // 8000 USDC for user
 
     function setUp() public {
         // Fork the Arbitrum mainnet at the latest block
@@ -42,12 +42,12 @@ contract MarketTest is Test {
         );
 
         // Initialize the DAI and WETH instance
-        dai = IERC20(daiAddress);
+        usdc = IERC20(usdcAddress);
         weth = IERC20(wethAddress);
 
         // Initialize price feed addresses
         wethPrice = wethPriceAddress;
-        daiPrice = daiPriceAddress;
+        usdcPrice = usdcPriceAddress;
 
         // InterestRateModel parameters
         uint256 baseRate = 0.02e18; // 2% base rate
@@ -57,11 +57,11 @@ contract MarketTest is Test {
 
         // Deploy contracts
         vault = new Vault(
-            dai,
+            usdc,
             address(0),
-            yearnDaiStrategy,
-            "Vault Dai",
-            "VDAI"
+            aaveStrategy,
+            "Vault USDC",
+            "VUSDC"
         );
 
         interestRateModel = new InterestRateModel(
@@ -80,12 +80,12 @@ contract MarketTest is Test {
             address(vault),
             address(priceOracle),
             address(interestRateModel),
-            address(dai)
+            address(usdc)
         );
 
         // Set the price feeds in the Oracle (using addPriceFeed function)
         priceOracle.addPriceFeed(address(weth), wethPrice); // Register WETH price feed
-        priceOracle.addPriceFeed(address(dai), daiPrice); // Register DAI price feed
+        priceOracle.addPriceFeed(address(usdc), usdcPrice); // Register USDC price feed
 
         // Set the correct market address in Vault
         vault.setMarket(address(market));
@@ -101,10 +101,10 @@ contract MarketTest is Test {
         // send some Ether to the user for gas
         vm.deal(user, 10 ether);
 
-        // Impersonate a DAI whale to send tokens to the lender
-        address daiWhale = 0xd85E038593d7A098614721EaE955EC2022B9B91B; // Replace with a valid DAI whale address
-        vm.startPrank(daiWhale);
-        dai.transfer(lender, initialBalance); // Transfer 10,000 DAI to user
+        // Impersonate a USDC whale to send tokens to the lender
+        address usdcWhale = 0x1eED63EfBA5f81D95bfe37d82C8E736b974F477b; // Replace with a valid USDC whale address
+        vm.startPrank(usdcWhale);
+        usdc.transfer(lender, initialBalance); // Transfer 10,000 USDC to user
         vm.stopPrank();
 
         // Impersonate a WETH whale to send tokens to the user
@@ -113,14 +113,14 @@ contract MarketTest is Test {
         weth.transfer(user, wethAmount); // Transfer 5,000 WETH to user
         vm.stopPrank();
 
-        // Impersonate a DAI whale to send tokens to the liquidator
-        vm.startPrank(daiWhale);
-        dai.transfer(liquidator, initialLiquidatorBalance); // Transfer 10,000 DAI to user
+        // Impersonate a USDC whale to send tokens to the liquidator
+        vm.startPrank(usdcWhale);
+        usdc.transfer(liquidator, initialLiquidatorBalance); // Transfer 10,000 USDC to user
         vm.stopPrank();
 
-        // Approve the vault contract for the lender to deposit DAI
+        // Approve the vault contract for the lender to deposit USDC
         vm.startPrank(lender);
-        dai.approve(address(vault), type(uint256).max); // Approve max amount
+        usdc.approve(address(vault), type(uint256).max); // Approve max amount
         vm.stopPrank();
 
         // Approve the market contract for the user to use WETH as collateral
@@ -129,19 +129,19 @@ contract MarketTest is Test {
         vm.stopPrank();
         console.log("Owner:", address(this));
 
-        // Approve the market contract for the user to deposit DAI (repay)
+        // Approve the market contract for the user to deposit USDC (repay)
         vm.startPrank(user);
-        dai.approve(address(market), type(uint256).max);
+        usdc.approve(address(market), type(uint256).max);
         vm.stopPrank();
 
-        //Approve the market contract for liquidator to transfer DAI (liquidator repayment)
+        //Approve the market contract for liquidator to transfer USDC (liquidator repayment)
         vm.startPrank(liquidator);
-        dai.approve(address(market), type(uint256).max);
+        usdc.approve(address(market), type(uint256).max);
         vm.stopPrank();
 
         // Simulate the vault contract approving the market contract
         vm.startPrank(address(market));
-        dai.approve(address(vault), type(uint256).max);
+        usdc.approve(address(vault), type(uint256).max);
         vm.stopPrank();
 
         // Set the market parameters (these can be whatever defaults you want for most tests)
@@ -153,13 +153,13 @@ contract MarketTest is Test {
         market.setMarketParameters(lltv, liquidationPenalty, protocolFeeRate);
         vm.stopPrank();
     }
-}
 
-// Function to retrieve the current price of WETH in USD
-function testGetWethPrice() public view returns (int256) {
-    // Fetch the latest price of WETH in USD from the PriceOracle
-    int256 wethPriceInUSD = priceOracle.getLatestPrice(address(weth));
-    return wethPriceInUSD;
+    // Function to retrieve the current price of WETH in USD
+    function testGetWethPrice() public view returns (int256) {
+        // Fetch the latest price of WETH in USD from the PriceOracle
+        int256 wethPriceInUSD = priceOracle.getLatestPrice(address(weth));
+        return wethPriceInUSD;
+    }
 }
 
 //     // Test the setMarketParameters function

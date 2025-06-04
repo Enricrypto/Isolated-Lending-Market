@@ -321,7 +321,7 @@ contract MarketTest is Test {
     }
 
     function testBorrow() public {
-        // address loanAsset = address(dai);
+        address loanAsset = address(usdc);
         address collateralToken = address(weth);
         address priceFeed = address(wethPrice);
         uint256 lentAmount = 5000 * 1e6; // 5000 USDC
@@ -335,13 +335,13 @@ contract MarketTest is Test {
         vm.stopPrank();
 
         uint256 shares = IERC20(yearnUsdcStrategy).balanceOf(address(vault));
-        console.log("Shares hold by vault after", shares);
         uint256 usdcInStrategy = ERC4626(yearnUsdcStrategy).convertToAssets(
             shares
         );
-        console.log("USDC in strategy", usdcInStrategy);
-
         uint256 vaultAssets = vault.convertToAssets(vault.totalSupply());
+
+        console.log("Shares hold by vault after", shares);
+        console.log("USDC in strategy", usdcInStrategy);
         console.log("vault assets", vaultAssets);
 
         // Add collateral token to the market
@@ -360,68 +360,44 @@ contract MarketTest is Test {
         vm.stopPrank();
 
         // Simulate time passing to trigger interest accrual
-        uint256 timeToAdvance = 5 days;
-        vm.warp(block.timestamp + timeToAdvance);
+        vm.warp(block.timestamp + 5 days);
 
         // Update interest and global borrow index without user interaction
+        vm.startPrank(address(this));
         market.updateGlobalBorrowIndex();
+        vm.stopPrank();
 
-        //     uint256 globalBorrowIndex2 = market.globalBorrowIndex();
-        //     console.log("global borrow index 2", globalBorrowIndex2);
+        // Second borrow
+        vm.startPrank(user);
+        market.borrow(borrowAmount2);
+        vm.stopPrank();
 
-        //     uint256 totalBorrowed = market.totalBorrows();
-        //     console.log("total borrows:", totalBorrowed);
+        // Validate vault state after borrowing
+        uint256 borrowedTotal = borrowAmount1 + borrowAmount2;
+        uint256 vaultAssetsAfter = vault.totalAssets();
+        uint256 liquidityAfter = vault.availableLiquidity();
+        uint256 strategyAssets = ERC4626(yearnUsdcStrategy).convertToAssets(
+            IERC20(yearnUsdcStrategy).balanceOf(address(vault))
+        );
 
-        //     uint256 totalSupply = vault.totalAssets();
-        //     console.log("Total supply:", totalSupply);
+        console.log("Vault totalAssets after borrow", vaultAssetsAfter);
+        console.log("Vault availableLiquidity after borrow", liquidityAfter);
+        console.log("Vault strategy assets after borrow", strategyAssets);
 
-        //     uint256 dynamicBorrowRate = interestRateModel.getDynamicBorrowRate();
-        //     console.log("Dynamic borrow rate:", dynamicBorrowRate);
+        assertApproxEqAbs(
+            vaultAssetsAfter,
+            strategyAssets + borrowedTotal,
+            5e6,
+            "Vault totalAssets should equal strategy + borrows"
+        );
 
-        //     // Update interest and global borrow index without user interaction
-        //     market.updateGlobalBorrowIndex();
+        assertLe(
+            liquidityAfter,
+            strategyAssets,
+            "Available liquidity should not exceed what strategy can redeem"
+        );
 
-        //     uint256 globalBorrowIndex3 = market.globalBorrowIndex();
-        //     console.log("global borrow index 3", globalBorrowIndex3);
-
-        //     uint256 userDebtAfterUpdate = market.getUserTotalDebt(user);
-
-        //     // Assert first update is updating user's debt correctly
-        //     assertGt(
-        //         userDebtAfterUpdate,
-        //         userDebtAfterBorrow1,
-        //         "User's debt should increase after first update"
-        //     );
-
-        //     // Ensure global borrow index increased
-        //     assertGt(
-        //         globalBorrowIndex2,
-        //         globalBorrowIndex1,
-        //         "Global borrow index should increase after interest accrual"
-        //     );
-
-        //     // Second borrow
-        //     vm.startPrank(user);
-        //     market.borrow(borrowAmount2);
-        //     vm.stopPrank();
-
-        //     uint256 userDebtAfterBorrow2 = market.getUserTotalDebt(user);
-        //     uint256 totalExpectedDebt = borrowAmount1 + borrowAmount2;
-
-        //     // Assert total debt is updated after the second borrow
-        //     assertGt(
-        //         userDebtAfterBorrow2,
-        //         userDebtAfterUpdate,
-        //         "User's total debt should increase after second borrow"
-        //     );
-
-        //     // Assert vault balance decreases by the total borrowed amount
-        //     uint256 vaultBalanceAfter = usdc.balanceOf(address(vault));
-        //     assertEq(
-        //         vaultBalanceAfter,
-        //         vaultBalanceBefore - totalExpectedDebt,
-        //         "Vault's USDC balance should decrease by the total borrowed amount"
-        //     );
+        assertGt(liquidityAfter, 0, "There should still be some liquidity");
     }
 }
 //     function testRepay() public {

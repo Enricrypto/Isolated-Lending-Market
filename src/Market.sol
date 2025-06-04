@@ -377,7 +377,7 @@ contract Market is ReentrancyGuard {
         uint256 totalAssets = vaultContract.totalAssets();
         if (totalAssets == 0) return 0;
 
-        uint256 utilization = Math.mulDiv(totalBorrows, 1e18, totalSupply);
+        uint256 utilization = Math.mulDiv(totalBorrows, 1e18, totalAssets);
         uint256 borrowRate = interestRateModel.getDynamicBorrowRate();
 
         // lendingRate = utilization * borrowRate * (1 - protocolFee)

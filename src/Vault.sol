@@ -19,6 +19,7 @@ contract Vault is ERC4626, ReentrancyGuard {
     event BorrowedByMarket(address indexed market, uint256 amount);
     event RepaidToVault(address indexed market, uint256 amount);
     event StrategyChanged(address oldStrategy, address newStrategy);
+    event StrategyFundsRedeemed(uint256 amount);
     event MarketOwnerChanged(address oldOwner, address newOwner);
 
     constructor(
@@ -69,17 +70,29 @@ contract Vault is ERC4626, ReentrancyGuard {
         market = newMarket;
     }
 
-    function changeStrategy(address _newStrategy) external onlyMarketOwner {
+    /// Marked as nonReentrant to prevent inconsistent state during strategy transition.
+    /// This ensures that no other sensitive functions (e.g., withdraw or adminBorrow)
+    /// can execute while funds are temporarily idle between redemption from the old
+    /// strategy and deposit into the new one, preventing potential misuse or loss of funds.
+    function changeStrategy(
+        address _newStrategy
+    ) external onlyMarketOwner nonReentrant {
         require(_newStrategy != address(0), "Invalid strategy");
 
+        require(
+            ERC4626(_newStrategy).asset() == address(asset()),
+            "Strategy asset mismatch"
+        );
+
         // Withdraw from the old strategy
-        strategy.redeem(
+        uint256 amountRedeemed = strategy.redeem(
             strategy.balanceOf(address(this)),
             address(this),
             address(this)
         );
 
         emit StrategyChanged(address(strategy), _newStrategy);
+        emit StrategyFundsRedeemed(amountRedeemed);
 
         strategy = ERC4626(_newStrategy);
         IERC20(asset()).approve(_newStrategy, type(uint256).max);

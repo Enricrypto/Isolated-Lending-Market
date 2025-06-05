@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
+import "lib/openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import "./Vault.sol";
 import "./PriceOracle.sol";
@@ -39,6 +40,7 @@ contract Market is ReentrancyGuard {
     mapping(address => mapping(address => uint256))
         public userCollateralBalances;
     mapping(address => address[]) public userCollateralAssets;
+    mapping(address => uint8) public tokenDecimals;
 
     // --- Borrowing State ---
     mapping(address => uint256) public userTotalDebt;
@@ -49,7 +51,6 @@ contract Market is ReentrancyGuard {
     event CollateralDepositsPaused(address indexed collateralToken);
     event CollateralDepositsResumed(address indexed collateralToken);
     event CollateralTokenRemoved(address indexed collateralToken);
-
     event CollateralDeposited(
         address indexed user,
         address indexed collateralToken,
@@ -62,12 +63,16 @@ contract Market is ReentrancyGuard {
     );
     event Borrow(address indexed user, uint256 loanAmount);
     event Repay(address indexed user, uint256 amountRepaid);
-
     event CollateralLiquidated(
         address indexed user,
         address indexed liquidator,
         address token,
         uint256 amount
+    );
+    event CollateralSeized(
+        address indexed user,
+        address indexed liquidator,
+        uint256 totalUsdValueSeized
     );
     event Liquidation(
         address indexed user,
@@ -126,13 +131,18 @@ contract Market is ReentrancyGuard {
         require(priceFeed != address(0), "Invalid price feed address");
         require(!supportedCollateralTokens[token], "Token already added");
 
+        // store token decimals for normalization
+        uint8 decimals = IERC20Metadata(token).decimals();
+        require(decimals <= 18, "Token decimals exceed maximum allowed");
+        tokenDecimals[token] = decimals;
+
         supportedCollateralTokens[token] = true;
         priceOracle.addPriceFeed(token, priceFeed);
 
         emit CollateralTokenAdded(token);
     }
 
-    // I NEED TO DECIDE WHAT TO DO WITH BALANCES ON PAUSED COLLATERAL TOKENS
+    // Pauses deposits for a collateral token, preventing it from contributing to borrowing power
     function pauseCollateralDeposits(address token) external onlyOwner {
         require(supportedCollateralTokens[token], "Token not supported");
 
@@ -175,10 +185,17 @@ contract Market is ReentrancyGuard {
             IERC20(token).transferFrom(msg.sender, address(this), amount),
             "Transfer failed"
         );
-        userCollateralBalances[msg.sender][token] += amount;
+
+        // Normalize token to 18 decimals
+        uint256 normalizedAmount = normalizeAmount(
+            amount,
+            tokenDecimals[token]
+        );
+
+        userCollateralBalances[msg.sender][token] += normalizedAmount;
 
         // Add to user's collateral list if this is the first deposit for this token
-        if (userCollateralBalances[msg.sender][token] == amount) {
+        if (userCollateralBalances[msg.sender][token] == normalizedAmount) {
             userCollateralAssets[msg.sender].push(token);
         }
 
@@ -186,38 +203,49 @@ contract Market is ReentrancyGuard {
             lastUpdatedIndex[msg.sender] = globalBorrowIndex;
         }
 
-        emit CollateralDeposited(msg.sender, token, amount);
+        emit CollateralDeposited(msg.sender, token, normalizedAmount);
     }
 
     function withdrawCollateral(
         address token,
-        uint256 amount
+        uint256 rawAmount
     ) external nonReentrant {
         _updateGlobalBorrowIndex();
+        require(supportedCollateralTokens[token], "Unsupported token");
+
+        // Normalize token to 18 decimals
+        uint256 normalizedAmount = normalizeAmount(
+            rawAmount,
+            tokenDecimals[token]
+        );
 
         require(
-            userCollateralBalances[msg.sender][token] >= amount,
+            userCollateralBalances[msg.sender][token] >= normalizedAmount,
             "Insufficient collateral"
         );
 
-        // Temporarily subtract the collateral from user's balance
-        userCollateralBalances[msg.sender][token] -= amount;
+        // Simulate withdrawal
+        userCollateralBalances[msg.sender][token] -= normalizedAmount;
 
         bool stillHealthy = _isHealthy(msg.sender);
 
-        // Revert the change if not healthy
-        userCollateralBalances[msg.sender][token] += amount;
+        // Revert simulated withdrawal if not healthy
+        if (!stillHealthy) {
+            userCollateralBalances[msg.sender][token] += normalizedAmount;
+            revert("Withdrawal would make position unhealthy");
+        }
 
-        // Users can withdraw paused collateral as long as the position remains healthy.
-        require(stillHealthy, "Withdrawal would make position unhealthy");
-
+        // Check protocol liquidity in raw token units (not normalized)
         require(
-            IERC20(token).balanceOf(address(this)) >= amount,
+            IERC20(token).balanceOf(address(this)) >= rawAmount,
             "Insufficient protocol liquidity"
         );
 
-        require(IERC20(token).transfer(msg.sender, amount), "Transfer failed");
-        userCollateralBalances[msg.sender][token] -= amount;
+        // Transfer token in raw units
+        require(
+            IERC20(token).transfer(msg.sender, rawAmount),
+            "Transfer failed"
+        );
 
         // Clean up user's collateral list if balance is now zero
         if (userCollateralBalances[msg.sender][token] == 0) {
@@ -228,7 +256,7 @@ contract Market is ReentrancyGuard {
             lastUpdatedIndex[msg.sender] = globalBorrowIndex;
         }
 
-        emit CollateralWithdrawn(msg.sender, token, amount);
+        emit CollateralWithdrawn(msg.sender, token, normalizedAmount);
     }
 
     // --- Debt Operations ---
@@ -238,7 +266,10 @@ contract Market is ReentrancyGuard {
 
         // Collateral value doesn't include paused collateral tokens
         uint256 collateralValue = _getUserTotalCollateralValue(msg.sender);
-        uint256 newDebt = _getUserTotalDebt(msg.sender) + amount;
+        uint8 loanDecimals = _getLoanAssetDecimals();
+
+        uint256 normalizedAmount = normalizeAmount(amount, loanDecimals);
+        uint256 newDebt = _getUserTotalDebt(msg.sender) + normalizedAmount;
         uint256 borrowingPower = Math.mulDiv(
             collateralValue,
             marketParams.lltv,
@@ -254,25 +285,30 @@ contract Market is ReentrancyGuard {
             "Insufficient vault liquidity"
         );
 
-        vaultContract.adminBorrow(amount);
-        loanAsset.transfer(msg.sender, amount);
+        vaultContract.adminBorrow(amount); // raw loan decimals
+        loanAsset.transfer(msg.sender, amount); // raw loan decimals
 
-        userTotalDebt[msg.sender] += amount;
-        totalBorrows += amount;
+        userTotalDebt[msg.sender] += normalizedAmount;
+        totalBorrows += normalizedAmount;
         lastUpdatedIndex[msg.sender] = globalBorrowIndex;
 
-        emit Borrow(msg.sender, amount);
+        emit Borrow(msg.sender, amount); // Emit raw amount
     }
 
     function repay(uint256 amount) external nonReentrant {
         _updateGlobalBorrowIndex();
 
+        uint8 loanDecimals = _getLoanAssetDecimals();
+
+        // Normalize input amount to 18 decimals
+        uint256 normalizedAmount = normalizeAmount(amount, loanDecimals);
+
+        // Interest and debt are in 18 decimals
         uint256 interest = _borrowerInterestAccrued(msg.sender);
-        require(amount >= interest, "Must cover interest");
-        require(
-            amount <= _getUserTotalDebt(msg.sender),
-            "Exceeds current debt"
-        );
+        uint256 totalDebt = _getUserTotalDebt(msg.sender);
+
+        require(normalizedAmount >= interest, "Must cover interest");
+        require(normalizedAmount <= totalDebt, "Exceeds current debt");
 
         uint256 protocolFee = Math.mulDiv(
             interest,
@@ -284,20 +320,30 @@ contract Market is ReentrancyGuard {
         uint256 interestToVault = interest - protocolFee;
 
         // Principal repaid is anything above interest
-        uint256 principal = amount > interest ? amount - interest : 0;
+        uint256 principal = normalizedAmount > interest
+            ? normalizedAmount - interest
+            : 0;
 
         // Total sent to vault = principal + interestToVault
         uint256 vaultRepayment = principal + interestToVault;
 
+        // Transfer full raw amount from user to contract
         require(
             loanAsset.transferFrom(msg.sender, address(this), amount),
             "Transfer failed"
         );
+        // Transfer protocol fee in raw units
         require(
-            loanAsset.transfer(protocolTreasury, protocolFee),
+            loanAsset.transfer(
+                protocolTreasury,
+                denormalizeAmount(protocolFee, loanDecimals)
+            ),
             "Protocol fee transfer failed"
         );
-        vaultContract.adminRepay(vaultRepayment);
+        // Send vault repayment in raw units
+        vaultContract.adminRepay(
+            denormalizeAmount(vaultRepayment, loanDecimals)
+        );
 
         if (principal > 0) {
             require(totalBorrows >= principal, "Borrow underflow");
@@ -389,6 +435,44 @@ contract Market is ReentrancyGuard {
             );
     }
 
+    // ======= DECIMALS CALCULATIONS =======
+
+    function normalizeAmount(
+        uint256 amount,
+        uint8 decimals
+    ) internal pure returns (uint256) {
+        if (decimals == 18) return amount;
+        require(decimals < 18, "Too many decimals");
+        return amount * (10 ** (18 - decimals));
+    }
+
+    function denormalizeAmount(
+        uint256 amount,
+        uint8 decimals
+    ) internal pure returns (uint256) {
+        return amount / (10 ** (18 - decimals));
+    }
+
+    function _getLoanAssetDecimals() internal view returns (uint8) {
+        uint8 decimals = IERC20Metadata(address(loanAsset)).decimals();
+        require(decimals <= 18, "Loan asset decimals too high");
+        return decimals;
+    }
+
+    // ======= USER HEALTH CHECKS =======
+
+    // Returns true if the user's position is currently healthy
+    function isHealthy(address user) public view returns (bool) {
+        return _isHealthy(user);
+    }
+
+    // Returns true if the user's position is currently at risk of liquidation
+    function isUserAtRiskOfLiquidation(
+        address user
+    ) external view returns (bool) {
+        return !_isHealthy(user);
+    }
+
     // ======= HELPER FUNCTIONS ========
 
     // Calculates the total debt for a user, including accrued interest
@@ -403,9 +487,16 @@ contract Market is ReentrancyGuard {
 
         // Add accrued interest to stored debt
         uint256 interestAccrued = _borrowerInterestAccrued(user);
-        totalDebt = storedDebt + interestAccrued;
 
-        return totalDebt;
+        uint8 loanDecimals = _getLoanAssetDecimals();
+
+        // Normalize interest to 18 decimals
+        uint256 normalizedInterest = normalizeAmount(
+            interestAccrued,
+            loanDecimals
+        );
+
+        totalDebt = storedDebt + normalizedInterest;
     }
 
     // Returns the total value (in USD) of all collateral a user has deposited
@@ -607,15 +698,20 @@ contract Market is ReentrancyGuard {
         address liquidator,
         uint256 debtToCover
     ) internal {
+        uint8 loanDecimals = _getLoanAssetDecimals();
+
+        // Transfer the repayment amount from liquidator to this contract
+        // denormalizeAmount converts from normalized 18 decimals to raw token decimals
         require(
             IERC20(loanAsset).transferFrom(
                 liquidator,
                 address(this),
-                debtToCover
+                denormalizeAmount(debtToCover, loanDecimals)
             ),
             "Transfer failed: insufficient allowance or balance"
         );
 
+        // Accrued interest on borrower's debt (normalized 18 decimals)
         uint256 interestAccrued = _borrowerInterestAccrued(borrower);
 
         uint256 protocolShare = Math.mulDiv(
@@ -624,23 +720,31 @@ contract Market is ReentrancyGuard {
             1e18
         );
 
+        // Net amount to repay to vault after protocol fee (normalized 18 decimals)
         uint256 netRepayToVault = debtToCover - protocolShare;
 
+        // Transfer protocol fee to treasury in raw token units
         bool protocolSuccess = loanAsset.transfer(
             protocolTreasury,
-            protocolShare
+            denormalizeAmount(protocolShare, loanDecimals)
         );
         require(protocolSuccess, "Protocol fee transfer failed");
 
-        vaultContract.adminRepay(netRepayToVault);
+        // Repay the vault with the net amount in raw token units
+        vaultContract.adminRepay(
+            denormalizeAmount(netRepayToVault, loanDecimals)
+        );
 
+        // Calculate principal repayment portion (normalized 18 decimals)
         uint256 principalRepayment = debtToCover > interestAccrued
             ? debtToCover - interestAccrued
             : 0;
 
+        // Update user debt and total borrows in normalized units
         userTotalDebt[borrower] -= principalRepayment;
         totalBorrows -= principalRepayment;
 
+        // Update borrow index snapshot for borrower
         lastUpdatedIndex[borrower] = globalBorrowIndex;
     }
 
@@ -650,15 +754,21 @@ contract Market is ReentrancyGuard {
         address user,
         address liquidator,
         address token,
-        uint256 remainingToSeizeUsd
+        uint256 remainingToSeizeUsd // 18 decimals
     ) internal returns (uint256 usdLiquidated) {
-        uint256 userTokenBalance = userCollateralBalances[user][token];
+        uint256 userTokenBalanceNormalized = userCollateralBalances[user][
+            token
+        ]; // 18 decimals
 
-        if (userTokenBalance == 0) {
+        if (userTokenBalanceNormalized == 0) {
             return 0;
         }
 
-        uint256 tokenValueUsd = _getTokenValueInUSD(token, userTokenBalance);
+        // Get value of user's collateral balance in USD (18 decimals)
+        uint256 tokenValueUsd = _getTokenValueInUSD(
+            token,
+            userTokenBalanceNormalized
+        );
         if (tokenValueUsd == 0) {
             return 0;
         }
@@ -667,38 +777,52 @@ contract Market is ReentrancyGuard {
             ? tokenValueUsd
             : remainingToSeizeUsd;
 
-        // Get token price and convert USD → token units
+        // Get token price and scale to 18 decimals
         int256 price = priceOracle.getLatestPrice(token);
         require(price > 0, "Invalid token price");
         uint256 scaledPrice = uint256(price) * 1e10;
 
-        // Convert USD amount back to token amount
-        uint256 tokensToSeize = Math.mulDiv(usdToSeize, 1e18, scaledPrice);
+        // Convert USD to token amount (normalized units)
+        uint256 tokensToSeizeNormalized = Math.mulDiv(
+            usdToSeize,
+            1e18,
+            scaledPrice
+        ); // 18 decimals
 
         require(
-            tokensToSeize <= userTokenBalance,
+            tokensToSeizeNormalized <= userTokenBalanceNormalized,
             "Trying to seize more than available"
         );
 
-        userCollateralBalances[user][token] -= tokensToSeize;
+        // Update internal state in normalized units
+        userCollateralBalances[user][token] -= tokensToSeizeNormalized;
 
+        // Use stored decimals to denormalize for transfer
+        uint8 decimals = tokenDecimals[token];
+        uint256 tokensToSeizeRaw = denormalizeAmount(
+            tokensToSeizeNormalized,
+            decimals
+        );
+
+        // Transfer raw tokens to the liquidator
         require(
-            IERC20(token).transfer(liquidator, tokensToSeize),
+            IERC20(token).transfer(liquidator, tokensToSeizeRaw),
             "Collateral transfer failed"
         );
 
-        return usdToSeize;
+        return usdToSeize; // Return seized USD value (18 decimals)
     }
 
     // Function to seize liquidated collateral
     function _seizeCollateral(
         address user,
         address liquidator,
-        uint256 collateralToSeizeUsd
+        uint256 collateralToSeizeUsd // 18 decimals USD units
     ) internal returns (uint256 totalLiquidated, uint256 remainingToSeizeUsd) {
         address[] memory collateralTokens = userCollateralAssets[user];
-        remainingToSeizeUsd = collateralToSeizeUsd;
-        totalLiquidated = 0;
+
+        remainingToSeizeUsd = collateralToSeizeUsd; // 18-decimal USD value
+        totalLiquidated = 0; // 18-decimal USD value
 
         for (
             uint i = 0;
@@ -707,6 +831,7 @@ contract Market is ReentrancyGuard {
         ) {
             address token = collateralTokens[i];
 
+            // _seizeOneCollateral returns amount seized in USD (18 decimals)
             uint256 liquidated = _seizeOneCollateral(
                 user,
                 liquidator,
@@ -714,9 +839,11 @@ contract Market is ReentrancyGuard {
                 remainingToSeizeUsd
             );
 
-            totalLiquidated += liquidated;
-            remainingToSeizeUsd -= liquidated;
+            totalLiquidated += liquidated; // Accumulate USD value
+            remainingToSeizeUsd -= liquidated; // Decrease remaining USD to seize
         }
+        emit CollateralSeized(user, liquidator, totalLiquidated);
+        return (totalLiquidated, remainingToSeizeUsd);
     }
 
     // =============================================================
@@ -727,10 +854,6 @@ contract Market is ReentrancyGuard {
         address user
     ) public view returns (uint256) {
         return _getUserTotalCollateralValue(user);
-    }
-
-    function isHealthy(address user) public view returns (bool) {
-        return _isHealthy(user);
     }
 
     function updateGlobalBorrowIndex() external {

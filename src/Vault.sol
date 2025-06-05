@@ -132,6 +132,11 @@ contract Vault is ERC4626, ReentrancyGuard {
         address receiver,
         address user
     ) public override nonReentrant returns (uint256 shares) {
+        require(
+            amount <= availableLiquidity(),
+            "Vault: Insufficient liquidity"
+        );
+
         // Always pull required assets back from the strategy
         strategy.withdraw(amount, address(this), address(this));
 

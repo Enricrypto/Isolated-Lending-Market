@@ -124,7 +124,6 @@ contract MarketTest is Test {
         vm.startPrank(user);
         weth.approve(address(market), type(uint256).max);
         vm.stopPrank();
-        console.log("Owner:", address(this));
 
         // Approve the market contract for the user to deposit USDC (repay)
         vm.startPrank(user);
@@ -144,7 +143,7 @@ contract MarketTest is Test {
         // Set the market parameters (these can be whatever defaults you want for most tests)
         uint256 lltv = 0.8e18; // 80%
         uint256 liquidationPenalty = 0.05e18; // 5%
-        uint256 protocolFeeRate = 1e17; // 10% protocol fee rate
+        uint256 protocolFeeRate = 0.1e18; // 10% protocol fee rate
 
         vm.startPrank(address(this)); // Make sure you act as the admin/owner here
         market.setMarketParameters(lltv, liquidationPenalty, protocolFeeRate);
@@ -321,13 +320,13 @@ contract MarketTest is Test {
     }
 
     function testBorrow() public {
-        address loanAsset = address(usdc);
         address collateralToken = address(weth);
         address priceFeed = address(wethPrice);
         uint256 lentAmount = 5000 * 1e6; // 5000 USDC
         uint256 depositAmount = 3 * 1e18; // 3 WETH
         uint256 borrowAmount1 = 1000 * 1e6; // First borrow: 1000 USDC
-        uint256 borrowAmount2 = 500 * 1e6; // Second borrow: 500 USDC
+        uint256 borrowAmount2 = 2000 * 1e6; // Second borrow: 500 USDC
+        uint256 withdrawAmount = 1000 * 1e6; // 1000 USDC
 
         // Lender deposits USDC into the vault
         vm.startPrank(lender);
@@ -339,10 +338,12 @@ contract MarketTest is Test {
             shares
         );
         uint256 vaultAssets = vault.convertToAssets(vault.totalSupply());
+        uint256 liquidityBeforeBorrow = vault.availableLiquidity();
 
-        console.log("Shares hold by vault after", shares);
+        console.log("Shares hold by vault", shares);
         console.log("USDC in strategy", usdcInStrategy);
         console.log("vault assets", vaultAssets);
+        console.log("Available liquidity Before Borrow", liquidityBeforeBorrow);
 
         // Add collateral token to the market
         vm.startPrank(address(this));
@@ -398,370 +399,233 @@ contract MarketTest is Test {
         );
 
         assertGt(liquidityAfter, 0, "There should still be some liquidity");
+
+        vm.startPrank(lender);
+        vault.withdraw(withdrawAmount, lender, lender);
+        vm.stopPrank();
+
+        uint256 vaultAssetsAfterWithdrawal = vault.totalAssets();
+        uint256 liquidityAfterWithdrawal = vault.availableLiquidity();
+        uint256 strategyAssetsAfterWithdrawal = ERC4626(yearnUsdcStrategy)
+            .convertToAssets(
+                IERC20(yearnUsdcStrategy).balanceOf(address(vault))
+            );
+
+        console.log(
+            "Vault totalAssets after withdrawal",
+            vaultAssetsAfterWithdrawal
+        );
+        console.log(
+            "Vault availableLiquidity after withdrawal",
+            liquidityAfterWithdrawal
+        );
+        console.log(
+            "Vault strategy assets after withdrawal",
+            strategyAssetsAfterWithdrawal
+        );
+    }
+
+    function testRepay() public {
+        uint256 lentAmount = 5000 * 1e6; // 5000 USDC
+        uint256 depositAmount = 2 * 1e18; // 2 WETH
+        uint256 borrow1 = 2000 * 1e6; // First borrow
+        uint256 borrow2 = 1000 * 1e6; // Second borrow
+
+        // Lender deposits to vault
+        vm.startPrank(lender);
+        vault.deposit(lentAmount, lender);
+        vm.stopPrank();
+
+        // Add WETH as collateral token
+        market.addCollateralToken(address(weth), wethPrice);
+
+        // User deposits collateral
+        vm.startPrank(user);
+        market.depositCollateral(address(weth), depositAmount);
+        vm.stopPrank();
+
+        // First borrow
+        vm.startPrank(user);
+        uint256 userBalBefore = usdc.balanceOf(user);
+        market.borrow(borrow1);
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(user), userBalBefore + borrow1);
+        assertEq(market.userTotalDebt(user), borrow1);
+
+        // Advance time & second borrow
+        vm.warp(block.timestamp + 1 days);
+
+        vm.startPrank(user);
+        market.borrow(borrow2);
+        vm.stopPrank();
+
+        uint256 totalBorrowed = borrow1 + borrow2;
+        assertEq(market.userTotalDebt(user) > borrow1, true);
+
+        // Advance time & accrue interest
+        vm.warp(block.timestamp + 1 days);
+        vm.startPrank(user);
+        market.updateGlobalBorrowIndex();
+        uint256 interest = market.getBorrowerInterestAccrued(user);
+        vm.stopPrank();
+
+        // Calculate repayment portions
+        uint256 partialRepay = totalBorrowed / 2;
+
+        // Final repay from user
+        vm.startPrank(user);
+        market.repay(partialRepay);
+        vm.stopPrank();
+
+        // Final assertions
+        assertEq(
+            market.userTotalDebt(user),
+            borrow1 + borrow2 + interest - partialRepay
+        );
+
+        assertEq(
+            usdc.balanceOf(user),
+            userBalBefore + borrow1 + borrow2 - partialRepay
+        );
+    }
+
+    function testPauseCollateralTriggersLiquidationRisk() public {
+        address collateralToken = address(weth);
+        address priceFeed = wethPrice;
+        uint256 lentAmount = 5000 * 1e6; // 5000 USDC
+        uint256 depositAmount = 2 * 1e18; // 2 WETH
+        uint256 borrowAmount = 2000 * 1e6; // 2000 USDC
+
+        // Lender deposits USDC into the vault
+        vm.startPrank(lender);
+        vault.deposit(lentAmount, lender);
+        vm.stopPrank();
+
+        // Add collateral token to the market
+        vm.startPrank(address(this));
+        market.addCollateralToken(collateralToken, priceFeed);
+        vm.stopPrank();
+
+        // User deposits collateral
+        vm.startPrank(user);
+        market.depositCollateral(collateralToken, depositAmount);
+        vm.stopPrank();
+
+        // User borrows
+        vm.startPrank(user);
+        market.borrow(borrowAmount);
+        vm.stopPrank();
+
+        // Confirm user is NOT at risk of liquidation yet
+        bool initialLiquidationRisk = market.isUserAtRiskOfLiquidation(user);
+        assertFalse(
+            initialLiquidationRisk,
+            "User should not be at liquidation risk initially"
+        );
+
+        // Owner pauses collateral deposits for WETH
+        address marketOwner = market.owner();
+        vm.startPrank(marketOwner);
+        market.pauseCollateralDeposits(collateralToken);
+        vm.stopPrank();
+
+        // After pausing, the collateral no longer contributes to borrowing power
+        // So user should now be at risk of liquidation
+        bool postPauseLiquidationRisk = market.isUserAtRiskOfLiquidation(user);
+        assertTrue(
+            postPauseLiquidationRisk,
+            "User should be at risk of liquidation after collateral paused"
+        );
+
+        assertFalse(market.isHealthy(user)); // user at risk
+
+        // Resume the collateral
+        vm.prank(marketOwner);
+        market.resumeCollateralDeposits(address(collateralToken));
+
+        // Now check that the user's position is healthy again
+        assertTrue(market.isHealthy(user)); // should now be healthy
+    }
+
+    function testValidateAndCalculateFullLiquidation() public {
+        address collateralToken = address(weth);
+        address priceFeed = wethPrice;
+        uint256 lentAmount = 10000 * 1e6; // 10,000 USDC
+        uint256 depositAmount = 2 * 1e18; // 1 WETH
+        uint256 borrowAmount = 3500 * 1e6; // 3800 USDC
+
+        // ====== SETUP ======
+
+        console.log("WETH price:", priceOracle.getLatestPrice(address(weth)));
+        // Lender provides liquidity
+        vm.startPrank(lender);
+        vault.deposit(lentAmount, lender);
+        vm.stopPrank();
+
+        // Add WETH as collateral
+        vm.prank(address(this));
+        market.addCollateralToken(collateralToken, priceFeed);
+
+        // User deposits WETH as collateral
+        vm.startPrank(user);
+        market.depositCollateral(collateralToken, depositAmount);
+        vm.stopPrank();
+        uint256 totalCollateralBefore = market.getUserTotalCollateralValue(
+            user
+        );
+        console.log("Total collateral before:", totalCollateralBefore);
+
+        // User borrows USDC
+        vm.startPrank(user);
+        market.borrow(borrowAmount);
+        vm.stopPrank();
+        console.log("User total debt:", market.getUserTotalDebt(user));
+
+        // ====== PRICE DROP SIMULATION ======
+
+        int256 oldPrice = priceOracle.getLatestPrice(collateralToken);
+        int256 newPrice = (oldPrice * 70) / 100; // 30% drop
+
+        // Mock oracle to return new lower price
+        vm.mockCall(
+            address(priceOracle),
+            abi.encodeWithSignature("getLatestPrice(address)", collateralToken),
+            abi.encode(newPrice)
+        );
+
+        uint256 totalCollateralAfter = market.getUserTotalCollateralValue(user);
+        console.log("Total collateral after:", totalCollateralAfter);
+
+        // ====== VALIDATION ======
+
+        vm.startPrank(liquidator);
+
+        // Retrieve liquidation values from contract
+        (uint256 debtToCover, uint256 collateralToSeizeUsd) = market
+            .validateAndCalculateFullLiquidation(user);
+
+        // Get current debt + collateral for manual comparison
+        uint256 totalDebt = market.getUserTotalDebt(user);
+        uint256 debtInUSD = market._loanDebtInUSD(totalDebt);
+
+        (, uint256 liquidationPenalty, ) = market.marketParams();
+        uint256 expectedCollateralToSeizeUsd = Math.mulDiv(
+            debtInUSD,
+            1e18 + liquidationPenalty,
+            1e18
+        );
+
+        // ====== ASSERTIONS ======
+
+        assertApproxEqAbs(debtToCover, debtInUSD, 1);
+        assertApproxEqAbs(
+            collateralToSeizeUsd,
+            expectedCollateralToSeizeUsd,
+            1
+        );
+        assertLt(totalCollateralAfter, collateralToSeizeUsd); // Position is undercollateralized
+
+        vm.stopPrank();
     }
 }
-//     function testRepay() public {
-//         address collateralToken = address(weth);
-//         address priceFeed = wethPrice;
-//         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
-//         uint256 depositAmount = 2 * 1e18; // 2 WETH
-//         uint256 borrowAmount = 2000 * 1e18; // 2000 DAI
-//         uint256 additionalBorrowAmount = 1000 * 1e18; // Additional borrow: 500 DAI
-
-//         // Lender deposits DAI into the vault
-//         vm.startPrank(lender);
-//         vault.deposit(lentAmount, lender);
-//         vm.stopPrank();
-
-//         // Add collateral token to the market
-//         vm.startPrank(address(this));
-//         market.addCollateralToken(collateralToken, priceFeed);
-//         vm.stopPrank();
-
-//         // User deposits collateral into the market
-//         vm.startPrank(user);
-//         market.depositCollateral(collateralToken, depositAmount);
-//         // uint256 collateralValue = market.getUserTotalCollateralValue(user);
-//         // console.log("Collateral value:", collateralValue);
-//         vm.stopPrank();
-
-//         // Initial borrowing checks
-//         uint256 userBalanceBeforeBorrow = dai.balanceOf(user);
-//         uint256 vaultBalanceBeforeBorrow = dai.balanceOf(address(vault));
-
-//         // User borrows for the first time
-//         vm.startPrank(user);
-//         market.borrow(borrowAmount);
-//         vm.stopPrank();
-
-//         uint256 userDebtAfterFirstBorrow = market.userTotalDebt(user);
-//         uint256 userBalanceAfterFirstBorrow = dai.balanceOf(user);
-//         uint256 vaultBalanceAfterFirstBorrow = dai.balanceOf(address(vault));
-
-//         // Assert first borrow
-//         assertEq(
-//             userBalanceAfterFirstBorrow,
-//             userBalanceBeforeBorrow + borrowAmount,
-//             "User's balance of DAI should increase after borrowing"
-//         );
-//         assertEq(
-//             vaultBalanceAfterFirstBorrow,
-//             vaultBalanceBeforeBorrow - borrowAmount,
-//             "Vault's balance of DAI should decrease after borrowing"
-//         );
-//         assertEq(
-//             userDebtAfterFirstBorrow,
-//             borrowAmount,
-//             "User's debt should match the borrowed amount"
-//         );
-
-//         // Simulate time passing to trigger interest accrual
-//         uint256 timeToElapse = 1 days;
-//         vm.warp(block.timestamp + timeToElapse);
-
-//         // User borrows again
-//         vm.startPrank(user);
-//         market.borrow(additionalBorrowAmount);
-//         vm.stopPrank();
-
-//         uint256 userDebtAfterSecondBorrow = market.userTotalDebt(user);
-//         uint256 userBalanceAfterSecondBorrow = dai.balanceOf(user);
-//         uint256 vaultBalanceAfterSecondBorrow = dai.balanceOf(address(vault));
-//         uint256 totalBorrowed = borrowAmount + additionalBorrowAmount;
-
-//         // Assert second borrow
-//         assertEq(
-//             userBalanceAfterSecondBorrow,
-//             userBalanceAfterFirstBorrow + additionalBorrowAmount,
-//             "User's balance of DAI should increase after second borrowing"
-//         );
-//         assertEq(
-//             vaultBalanceAfterSecondBorrow,
-//             vaultBalanceAfterFirstBorrow - additionalBorrowAmount,
-//             "Vault's balance of DAI should decrease after second borrowing"
-//         );
-//         assertGt(
-//             userDebtAfterSecondBorrow,
-//             userDebtAfterFirstBorrow,
-//             "User's debt should increase after second borrow"
-//         );
-
-//         // Partial repayment
-//         uint256 partialRepayment = totalBorrowed / 2;
-
-//         // Simulate time passing to trigger interest accrual
-//         uint256 timeToAdvance = 1 days;
-//         vm.warp(block.timestamp + timeToAdvance);
-
-//         // uint256 beforeGlobalBorrowIndex = market.globalBorrowIndex();
-//         // console.log("Before global borrow index:", beforeGlobalBorrowIndex);
-
-//         vm.startPrank(user);
-//         market.updateGlobalBorrowIndex();
-
-//         // uint256 afterGlobalBorrowIndex = market.globalBorrowIndex();
-//         // console.log("After global borrow index:", afterGlobalBorrowIndex);
-
-//         // uint256 interestAccrued = market.borrowerInterestAccrued(user);
-//         // console.log("Interest accrued:", interestAccrued);
-
-//         // uint256 principalRepayment = partialRepayment - interestAccrued;
-//         // console.log("Principal Repayment:", principalRepayment);
-//         // console.log("Partial Repayment:", partialRepayment);
-
-//         // (, , uint256 protocolFeeRate) = market.marketParams();
-
-//         // uint256 protocolFee = (interestAccrued * protocolFeeRate) / 1e18;
-//         // console.log("Protocol Fee", protocolFee);
-
-//         // uint256 interestToVault = interestAccrued - protocolFee;
-//         // console.log("Interest to vault", interestToVault);
-
-//         // uint256 principal = partialRepayment > interestAccrued
-//         //     ? partialRepayment - interestAccrued
-//         //     : 0;
-//         // console.log("Principal", principal);
-
-//         // uint256 netRepayToVault = principal + interestToVault;
-//         // console.log("Net repay to vault:", netRepayToVault);
-
-//         // dai.transferFrom(user, address(market), partialRepayment);
-
-//         // // Pay the protocol fee (interest portion)
-//         // dai.transfer(protocolTreasury, protocolFee);
-
-//         // console.log(
-//         //     "protocol treasury balance:",
-//         //     dai.balanceOf(address(protocolTreasury))
-//         // );
-//         // vm.stopPrank();
-
-//         // uint256 marketDaiBalance = dai.balanceOf(address(market));
-//         // console.log("Market DAI balance:", marketDaiBalance);
-
-//         // vm.startPrank(address(market));
-//         // vault.adminRepay(netRepayToVault);
-
-//         // uint256 vaultDaiBalance = dai.balanceOf(address(vault));
-//         // console.log("Vault DAI Balance:", vaultDaiBalance);
-//         uint256 interestAccrued = market.getBorrowerInterestAccrued(user);
-
-//         vm.startPrank(user);
-//         market.repay(partialRepayment);
-//         vm.stopPrank();
-
-//         uint256 userDebtAfterRepay = market.userTotalDebt(user);
-//         uint256 userBalanceAfterRepay = dai.balanceOf(user);
-//         // uint256 vaultBalanceAfterRepay = dai.balanceOf(address(vault));
-
-//         // Assert partial repayment
-//         assertEq(
-//             userDebtAfterRepay,
-//             userDebtAfterSecondBorrow + interestAccrued - partialRepayment,
-//             "User's debt should decrease by the repaid amount"
-//         );
-//         assertEq(
-//             userBalanceAfterRepay,
-//             userBalanceAfterSecondBorrow - partialRepayment,
-//             "User's balance of DAI should decrease by the repaid amount"
-//         );
-//     }
-
-//     function testValidateAndCalculateFullLiquidation() public {
-//         address collateralToken = address(weth);
-//         address priceFeed = wethPrice;
-//         uint256 lentAmount = 10000 * 1e18; // 10000 DAI
-//         uint256 depositAmount = 3 * 1e18; // 3 WETH
-//         uint256 borrowAmount = 4700 * 1e18; // 4700 DAI
-
-//         // Lender deposits DAI into the vault
-//         vm.startPrank(lender);
-//         vault.deposit(lentAmount, lender);
-//         vm.stopPrank();
-
-//         // Add collateral token to the market
-//         vm.startPrank(address(this));
-//         market.addCollateralToken(collateralToken, priceFeed);
-//         vm.stopPrank();
-
-//         // User deposits collateral into the market
-//         vm.startPrank(user);
-//         market.depositCollateral(collateralToken, depositAmount);
-//         uint256 collateral = market.getUserTotalCollateralValue(user);
-//         console.log("collateral", collateral);
-//         vm.stopPrank();
-
-//         console.log(dai.balanceOf(user));
-
-//         // User borrows DAI
-//         vm.startPrank(user);
-//         market.borrow(borrowAmount);
-//         vm.stopPrank();
-
-//         // ====== SIMULATE COLLATERAL PRICE DROP ======
-//         // Assume the WETH price drops by 30%, making the user go underwater.
-//         int256 newPrice = (priceOracle.getLatestPrice(collateralToken) * 70) /
-//             100;
-
-//         // Mock the price oracle to return the new price
-//         vm.mockCall(
-//             address(priceOracle), // Contract to mock
-//             abi.encodeWithSignature("getLatestPrice(address)", collateralToken),
-//             abi.encode(newPrice) // New mocked price
-//         );
-
-//         vm.startPrank(liquidator);
-//         // market.liquidate(user);
-//         uint256 totalDebt = market.getUserTotalDebt(user);
-//         console.log("Total debt:", totalDebt);
-//         uint256 debtInUSD = market._loanDebtInUSD(totalDebt);
-//         uint256 totalCollateral = market.getUserTotalCollateralValue(user);
-//         console.log("Total collateral:", totalCollateral);
-
-//         uint256 debtToCover = debtInUSD;
-//         console.log("Debt to cover", debtToCover);
-
-//         (, uint256 liquidationPenalty, ) = market.marketParams();
-//         uint256 collateralToSeizeUsd = Math.mulDiv(
-//             debtToCover,
-//             1e18 + liquidationPenalty,
-//             1e18
-//         );
-//         console.log("Collateral to seize USD", collateralToSeizeUsd);
-//     }
-
-//     function testProcessLiquidatorRepayment() public {
-//         address collateralToken = address(weth);
-//         address priceFeed = wethPrice;
-//         uint256 lentAmount = 10000 * 1e18; // 10000 DAI
-//         uint256 depositAmount = 3 * 1e18; // 3 WETH
-//         uint256 borrowAmount = 4700 * 1e18; // 4700 DAI
-
-//         // Lender deposits DAI into the vault
-//         vm.startPrank(lender);
-//         vault.deposit(lentAmount, lender);
-//         vm.stopPrank();
-
-//         // Add collateral token to the market
-//         vm.startPrank(address(this));
-//         market.addCollateralToken(collateralToken, priceFeed);
-//         vm.stopPrank();
-
-//         // User deposits collateral into the market
-//         vm.startPrank(user);
-//         market.depositCollateral(collateralToken, depositAmount);
-//         uint256 collateral = market.getUserTotalCollateralValue(user);
-//         console.log("collateral", collateral);
-//         vm.stopPrank();
-
-//         console.log(dai.balanceOf(user));
-
-//         // User borrows DAI
-//         vm.startPrank(user);
-//         market.borrow(borrowAmount);
-//         vm.stopPrank();
-
-//         // ====== SIMULATE COLLATERAL PRICE DROP ======
-//         // Assume the WETH price drops by 20%, making the user go underwater.
-//         int256 newPrice = (priceOracle.getLatestPrice(collateralToken) * 80) /
-//             100;
-
-//         // Mock the price oracle to return the new price
-//         vm.mockCall(
-//             address(priceOracle), // Contract to mock
-//             abi.encodeWithSignature("getLatestPrice(address)", collateralToken),
-//             abi.encode(newPrice) // New mocked price
-//         );
-
-//         vm.startPrank(liquidator);
-//         market.validateAndCalculateFullLiquidation(user);
-//         // uint256 currentDebt = market.getUserTotalDebt(user);
-//         // uint256 debtInUSD = market._loanDebtInUSD(currentDebt); // convert to USD
-//         // uint256 collateralValue = market.getUserTotalCollateralValue(user); // in USD terms
-//         // console.log("collateral value ", collateralValue);
-
-//         // // Liquidator repays full debt
-//         // uint256 debtToCover = debtInUSD;
-
-//         // (, uint256 liquidationPenalty, ) = market.marketParams();
-//         // // Calculate how much collateral should be seized (debt + liquidation penalty)
-//         // uint256 collateralToSeizeUsd = Math.mulDiv(
-//         //     debtToCover,
-//         //     1e18 + liquidationPenalty,
-//         //     1e18
-//         // );
-//         // console.log("collateral to seize USD", collateralToSeizeUsd);
-//         vm.stopPrank();
-
-//         // uint256 liquidatorBalance = IERC20(address(dai)).balanceOf(liquidator);
-//         // console.log("Liquidator DAI balance:", liquidatorBalance);
-//         // vm.startPrank(address(market));
-//         // bool success = IERC20(address(dai)).transferFrom(
-//         //     liquidator,
-//         //     address(market),
-//         //     debtToCover
-//         // );
-//         // assertTrue(success, "Transfer failed");
-//         // vault.adminRepay(debtToCover);
-//         // uint256 balanceAfterRepayment = IERC20(address(dai)).balanceOf(
-//         //     liquidator
-//         // );
-//         // console.log("Balance After Repayment", balanceAfterRepayment);
-
-//         // uint256 debtAfterRepayment = userDebt - debtToCover;
-//         // console.log("Debt after repayment:", debtAfterRepayment);
-//         // vm.stopPrank();
-//     }
-//     function testLentAssets() public {
-//         address collateralToken = address(weth);
-//         address priceFeed = wethPrice;
-//         uint256 lentAmount = 5000 * 1e18; // 5000 DAI
-//         uint256 depositAmount = 2 * 1e18; // 2 WETH
-//         uint256 borrowAmount = 2000 * 1e18; // 2000 DAI
-
-//         // Lender deposits DAI into the vault
-//         vm.startPrank(lender);
-//         vault.deposit(lentAmount, lender);
-//         vm.stopPrank();
-
-//         // Add collateral token to the market
-//         vm.startPrank(address(this));
-//         market.addCollateralToken(collateralToken, priceFeed);
-//         vm.stopPrank();
-
-//         // User deposits collateral into the market
-//         vm.startPrank(user);
-//         market.depositCollateral(collateralToken, depositAmount);
-//         uint256 collateralValue = market.getUserTotalCollateralValue(user);
-//         console.log("Collateral value:", collateralValue);
-//         vm.stopPrank();
-
-//         // User borrows for the first time
-//         vm.startPrank(user);
-//         market.borrow(borrowAmount);
-//         vm.stopPrank();
-
-//         // Check vault lent assets
-//         uint256 totalBorrows = market.totalBorrows();
-//         console.log("total Borrows", totalBorrows);
-
-//         uint256 beforeGlobalBorrowIndex = market.globalBorrowIndex();
-//         console.log("Before global borrow index:", beforeGlobalBorrowIndex);
-
-//         // Simulate time passing to trigger interest accrual
-//         uint256 timeToAdvance = 1 days;
-//         vm.warp(block.timestamp + timeToAdvance);
-
-//         market.updateGlobalBorrowIndex();
-
-//         uint256 afterGlobalBorrowIndex = market.globalBorrowIndex();
-//         console.log("After global borrow index:", afterGlobalBorrowIndex);
-
-//         uint256 totalWithInterest = (totalBorrows *
-//             market.globalBorrowIndex()) / 1e18;
-//         console.log("Total with interest:", totalWithInterest);
-
-//         uint256 totalAssets = vault.totalAssets();
-//         console.log("Total assets:", totalAssets);
-//     }
-// }

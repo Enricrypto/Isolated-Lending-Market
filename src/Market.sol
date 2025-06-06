@@ -24,6 +24,7 @@ contract Market is ReentrancyGuard {
 
     address public immutable owner;
     address public immutable protocolTreasury;
+    address public badDebtAddress; // Controlled by protocol or DAO
     Vault public immutable vaultContract;
     PriceOracle public immutable priceOracle;
     InterestRateModel public immutable interestRateModel;
@@ -45,6 +46,9 @@ contract Market is ReentrancyGuard {
     // --- Borrowing State ---
     mapping(address => uint256) public userTotalDebt;
     mapping(address => uint256) public lastUpdatedIndex;
+
+    // --- Debt Tracking ---
+    mapping(address => uint256) public unrecoveredDebt;
 
     // --- Events ---
     event CollateralTokenAdded(address indexed collateralToken);
@@ -81,15 +85,23 @@ contract Market is ReentrancyGuard {
         uint256 collateralToLiquidate,
         uint256 remainingToSeizeUsd
     );
+    event BadDebtTransferred(
+        address indexed from,
+        address indexed to,
+        uint256 amount
+    );
 
     // --- Constructor ---
     constructor(
+        address _badDebtAddress,
         address _protocolTreasury,
         address _vaultContract,
         address _priceOracle,
         address _interestRateModel,
         address _loanAsset
     ) {
+        require(_badDebtAddress != address(0), "Invalid badDebtAddress");
+        badDebtAddress = _badDebtAddress;
         protocolTreasury = _protocolTreasury;
         vaultContract = Vault(_vaultContract);
         priceOracle = PriceOracle(_priceOracle);
@@ -102,6 +114,14 @@ contract Market is ReentrancyGuard {
         require(
             msg.sender == owner,
             "Only contract owner can execute this function"
+        );
+        _;
+    }
+
+    modifier notSystemAddress() {
+        require(
+            msg.sender != badDebtAddress && msg.sender != protocolTreasury,
+            "System address cannot interact"
         );
         _;
     }
@@ -176,7 +196,7 @@ contract Market is ReentrancyGuard {
     function depositCollateral(
         address token,
         uint256 amount
-    ) external nonReentrant {
+    ) external nonReentrant notSystemAddress {
         _updateGlobalBorrowIndex();
         require(supportedCollateralTokens[token], "Token not supported");
         require(!depositsPaused[token], "Deposits paused");
@@ -209,7 +229,7 @@ contract Market is ReentrancyGuard {
     function withdrawCollateral(
         address token,
         uint256 rawAmount
-    ) external nonReentrant {
+    ) external nonReentrant notSystemAddress {
         _updateGlobalBorrowIndex();
         require(supportedCollateralTokens[token], "Unsupported token");
 
@@ -261,7 +281,7 @@ contract Market is ReentrancyGuard {
 
     // --- Debt Operations ---
 
-    function borrow(uint256 amount) external nonReentrant {
+    function borrow(uint256 amount) external nonReentrant notSystemAddress {
         _updateGlobalBorrowIndex();
 
         // Collateral value doesn't include paused collateral tokens
@@ -295,7 +315,7 @@ contract Market is ReentrancyGuard {
         emit Borrow(msg.sender, amount); // Emit raw amount
     }
 
-    function repay(uint256 amount) external nonReentrant {
+    function repay(uint256 amount) external nonReentrant notSystemAddress {
         _updateGlobalBorrowIndex();
 
         uint8 loanDecimals = _getLoanAssetDecimals();
@@ -356,7 +376,7 @@ contract Market is ReentrancyGuard {
         emit Repay(msg.sender, amount);
     }
 
-    function liquidate(address user) external nonReentrant {
+    function liquidate(address user) external nonReentrant notSystemAddress {
         _updateGlobalBorrowIndex(); // Ensure interest accrual is up to date
 
         // Step 1: Check if user is eligible for liquidation and calculate how much debt can be repaid and how much collateral can be seized (in USD)
@@ -383,7 +403,7 @@ contract Market is ReentrancyGuard {
         );
     }
 
-    // ======= DEBT CALCULATIONS =======
+    // ======= PUBLIC & EXTERNAL VIEW INTERFACES =======
 
     // Function to calculate total borrows plus accrued interest
     function totalBorrowsWithInterest() external view returns (uint256) {
@@ -398,7 +418,9 @@ contract Market is ReentrancyGuard {
             1e18
         );
 
-        return totalWithInterest;
+        // Passing raw value to vault
+        uint8 loanDecimals = _getLoanAssetDecimals();
+        return denormalizeAmount(totalWithInterest, loanDecimals);
     }
 
     // Function to expose market parameters
@@ -435,32 +457,6 @@ contract Market is ReentrancyGuard {
             );
     }
 
-    // ======= DECIMALS CALCULATIONS =======
-
-    function normalizeAmount(
-        uint256 amount,
-        uint8 decimals
-    ) internal pure returns (uint256) {
-        if (decimals == 18) return amount;
-        require(decimals < 18, "Too many decimals");
-        return amount * (10 ** (18 - decimals));
-    }
-
-    function denormalizeAmount(
-        uint256 amount,
-        uint8 decimals
-    ) internal pure returns (uint256) {
-        return amount / (10 ** (18 - decimals));
-    }
-
-    function _getLoanAssetDecimals() internal view returns (uint8) {
-        uint8 decimals = IERC20Metadata(address(loanAsset)).decimals();
-        require(decimals <= 18, "Loan asset decimals too high");
-        return decimals;
-    }
-
-    // ======= USER HEALTH CHECKS =======
-
     // Returns true if the user's position is currently healthy
     function isHealthy(address user) public view returns (bool) {
         return _isHealthy(user);
@@ -473,48 +469,7 @@ contract Market is ReentrancyGuard {
         return !_isHealthy(user);
     }
 
-    // ======= HELPER FUNCTIONS ========
-
-    // Calculates the total debt for a user, including accrued interest
-    function _getUserTotalDebt(
-        address user
-    ) internal view returns (uint256 totalDebt) {
-        uint256 storedDebt = userTotalDebt[user];
-
-        if (storedDebt == 0) {
-            return 0;
-        }
-
-        // Add accrued interest to stored debt
-        uint256 interestAccrued = _borrowerInterestAccrued(user);
-
-        uint8 loanDecimals = _getLoanAssetDecimals();
-
-        // Normalize interest to 18 decimals
-        uint256 normalizedInterest = normalizeAmount(
-            interestAccrued,
-            loanDecimals
-        );
-
-        totalDebt = storedDebt + normalizedInterest;
-    }
-
-    // Returns the total value (in USD) of all collateral a user has deposited
-    function _getUserTotalCollateralValue(
-        address user
-    ) internal view returns (uint256 totalValue) {
-        address[] memory tokens = userCollateralAssets[user];
-
-        for (uint i = 0; i < tokens.length; i++) {
-            address token = tokens[i];
-            if (!depositsPaused[token]) {
-                uint256 amount = userCollateralBalances[user][token];
-                if (amount > 0) {
-                    totalValue += _getTokenValueInUSD(token, amount);
-                }
-            }
-        }
-    }
+    // ======= USER HEALTH CHECKS =======
 
     // Calculates if a position is healthy
     function _isHealthy(address user) internal view returns (bool) {
@@ -541,6 +496,39 @@ contract Market is ReentrancyGuard {
         return healthFactor >= 1e18;
     }
 
+    // Calculates the total debt for a user, including accrued interest
+    function _getUserTotalDebt(
+        address user
+    ) internal view returns (uint256 totalDebt) {
+        uint256 storedDebt = userTotalDebt[user];
+
+        if (storedDebt == 0) {
+            return 0;
+        }
+
+        // Add accrued interest to stored debt. Already normalized
+        uint256 interestAccrued = _borrowerInterestAccrued(user);
+
+        totalDebt = storedDebt + interestAccrued;
+    }
+
+    // Returns the total value (in USD) of all collateral a user has deposited
+    function _getUserTotalCollateralValue(
+        address user
+    ) internal view returns (uint256 totalValue) {
+        address[] memory tokens = userCollateralAssets[user];
+
+        for (uint i = 0; i < tokens.length; i++) {
+            address token = tokens[i];
+            if (!depositsPaused[token]) {
+                uint256 amount = userCollateralBalances[user][token];
+                if (amount > 0) {
+                    totalValue += _getTokenValueInUSD(token, amount);
+                }
+            }
+        }
+    }
+
     // Calculates the accrued interest on a debt considering dynamic rates
     function _borrowerInterestAccrued(
         address borrower
@@ -563,111 +551,12 @@ contract Market is ReentrancyGuard {
         return interestAccrued;
     }
 
-    // Updates the global borrow index
-    function _updateGlobalBorrowIndex() private {
-        uint256 currentTimestamp = block.timestamp;
-
-        // Initialize the timestamp on the first call
-        if (lastAccrualTimestamp == 0) {
-            lastAccrualTimestamp = currentTimestamp;
-            return;
-        }
-
-        uint256 timeElapsed = currentTimestamp - lastAccrualTimestamp;
-        if (timeElapsed == 0) {
-            return; // No time passed, no update needed
-        }
-
-        uint256 totalBorrowed = totalBorrows; // Total outstanding borrows
-        uint256 totalAssets = vaultContract.totalAssets(); // Total assets backing the system
-
-        // Skip if no borrows or no liquidity
-        if (totalBorrowed == 0 || totalAssets == 0) {
-            return;
-        }
-
-        uint256 previousGlobalBorrowIndex = globalBorrowIndex;
-
-        // Get the current dynamic borrow rate (annualized rate scaled by 1e18)
-        uint256 dynamicBorrowRate = interestRateModel.getDynamicBorrowRate();
-
-        // Scale the interest rate based on time elapsed to match the actual time the loan was held
-        uint256 secondsPerYear = 365 days;
-        uint256 effectiveRate = Math.mulDiv(
-            dynamicBorrowRate,
-            timeElapsed,
-            secondsPerYear
-        );
-
-        // Calculate the new global borrow index
-        uint256 newGlobalBorrowIndex = Math.mulDiv(
-            previousGlobalBorrowIndex,
-            (1e18 + effectiveRate),
-            1e18
-        );
-
-        // Skip updating if the index remains the same
-        if (newGlobalBorrowIndex == previousGlobalBorrowIndex) {
-            lastAccrualTimestamp = currentTimestamp;
-            return;
-        }
-
-        // Set the new global borrow index and update the timestamp
-        globalBorrowIndex = newGlobalBorrowIndex;
-        lastAccrualTimestamp = currentTimestamp;
-    }
-
-    // Function to remove an asset from userCollateralAssets[msg.sender]
-    function _removeCollateralAsset(
-        address user,
-        address collateralToken
-    ) private {
-        uint256 length = userCollateralAssets[user].length;
-        for (uint256 i = 0; i < length; i++) {
-            if (userCollateralAssets[user][i] == collateralToken) {
-                // Swap with last element and pop to avoid gaps
-                userCollateralAssets[user][i] = userCollateralAssets[user][
-                    length - 1
-                ];
-                userCollateralAssets[user].pop();
-                break;
-            }
-        }
-    }
-
-    // Function to get the token's value in USD
-    function _getTokenValueInUSD(
-        address collateralToken,
-        uint256 amount
-    ) internal view returns (uint256) {
-        int256 tokenPrice = priceOracle.getLatestPrice(collateralToken);
-        uint256 scaledPrice = uint256(tokenPrice) * 1e10; // Scale to 18 decimals
-        require(scaledPrice > 0, "Invalid token price from Oracle");
-
-        uint256 tokenValueInUSD = Math.mulDiv(amount, scaledPrice, 1e18);
-
-        return tokenValueInUSD;
-    }
-
-    // Function to calculate loan asset in USD terms
-    function _getLoanDebtInUSD(uint256 amount) internal view returns (uint256) {
-        int256 tokenPrice = priceOracle.getLatestPrice(address(loanAsset));
-        uint256 scaledPrice = uint256(tokenPrice) * 1e10; // Scale to 18 decimals
-        require(scaledPrice > 0, "Invalid token price from Oracle");
-
-        uint256 debtInUSD = Math.mulDiv(amount, scaledPrice, 1e18);
-
-        return debtInUSD;
-    }
+    // ======= LIQUIDATION LOGIC =======
 
     // Helper function to validate and calculate full liquidation
     function _validateAndCalculateFullLiquidation(
         address user
-    )
-        internal
-        view
-        returns (uint256 debtToCover, uint256 collateralToSeizeUsd)
-    {
+    ) internal returns (uint256 debtToCover, uint256 collateralToSeizeUsd) {
         require(!_isHealthy(user), "User not eligible for liquidation");
 
         uint256 currentDebt = _getUserTotalDebt(user);
@@ -677,17 +566,25 @@ contract Market is ReentrancyGuard {
         // Liquidator repays full debt
         debtToCover = debtInUSD;
 
-        // Calculate how much collateral should be seized (debt + liquidation penalty)
-        collateralToSeizeUsd = Math.mulDiv(
-            debtToCover,
-            1e18 + marketParams.liquidationPenalty,
-            1e18
+        // Calculate how much collateral to seize (debt + liquidation penalty), allowing partial liquidation
+        collateralToSeizeUsd = Math.min(
+            Math.mulDiv(
+                debtToCover,
+                1e18 + marketParams.liquidationPenalty,
+                1e18
+            ),
+            collateralValue
         );
 
-        require(
-            collateralToSeizeUsd <= collateralValue,
-            "Not enough collateral to cover liquidation"
-        );
+        // Calculate unrecovered portion of debt
+        uint256 unrecoveredAmount = (collateralToSeizeUsd < debtToCover)
+            ? debtToCover - collateralToSeizeUsd
+            : 0;
+
+        // Move bad debt from user to badDebtAddress and update tracking
+        if (unrecoveredAmount > 0) {
+            _handleBadDebt(user, unrecoveredAmount);
+        }
 
         return (debtToCover, collateralToSeizeUsd);
     }
@@ -846,6 +743,146 @@ contract Market is ReentrancyGuard {
         return (totalLiquidated, remainingToSeizeUsd);
     }
 
+    function _handleBadDebt(address user, uint256 unrecovered) internal {
+        if (unrecovered == 0) return;
+
+        require(userTotalDebt[user] >= unrecovered, "Insufficient user debt");
+
+        userTotalDebt[user] -= unrecovered;
+        userTotalDebt[badDebtAddress] += unrecovered;
+
+        unrecoveredDebt[user] += unrecovered;
+
+        emit BadDebtTransferred(user, badDebtAddress, unrecovered);
+    }
+
+    // ======= INTEREST INDEX & ACCRUAL =======
+
+    // Updates the global borrow index
+    function _updateGlobalBorrowIndex() private {
+        uint256 currentTimestamp = block.timestamp;
+
+        // Initialize the timestamp on the first call
+        if (lastAccrualTimestamp == 0) {
+            lastAccrualTimestamp = currentTimestamp;
+            return;
+        }
+
+        uint256 timeElapsed = currentTimestamp - lastAccrualTimestamp;
+        if (timeElapsed == 0) {
+            return; // No time passed, no update needed
+        }
+
+        uint256 totalBorrowed = totalBorrows; // Total outstanding borrows
+        uint256 totalAssets = vaultContract.totalAssets(); // Total assets backing the system
+
+        // Skip if no borrows or no liquidity
+        if (totalBorrowed == 0 || totalAssets == 0) {
+            return;
+        }
+
+        uint256 previousGlobalBorrowIndex = globalBorrowIndex;
+
+        // Get the current dynamic borrow rate (annualized rate scaled by 1e18)
+        uint256 dynamicBorrowRate = interestRateModel.getDynamicBorrowRate();
+
+        // Scale the interest rate based on time elapsed to match the actual time the loan was held
+        uint256 secondsPerYear = 365 days;
+        uint256 effectiveRate = Math.mulDiv(
+            dynamicBorrowRate,
+            timeElapsed,
+            secondsPerYear
+        );
+
+        // Calculate the new global borrow index
+        uint256 newGlobalBorrowIndex = Math.mulDiv(
+            previousGlobalBorrowIndex,
+            (1e18 + effectiveRate),
+            1e18
+        );
+
+        // Skip updating if the index remains the same
+        if (newGlobalBorrowIndex == previousGlobalBorrowIndex) {
+            lastAccrualTimestamp = currentTimestamp;
+            return;
+        }
+
+        // Set the new global borrow index and update the timestamp
+        globalBorrowIndex = newGlobalBorrowIndex;
+        lastAccrualTimestamp = currentTimestamp;
+    }
+
+    // ======= USD VALUATION HELPERS =======
+
+    // Function to get the token's value in USD
+    function _getTokenValueInUSD(
+        address collateralToken,
+        uint256 amount
+    ) internal view returns (uint256) {
+        int256 tokenPrice = priceOracle.getLatestPrice(collateralToken);
+        uint256 scaledPrice = uint256(tokenPrice) * 1e10; // Scale to 18 decimals
+        require(scaledPrice > 0, "Invalid token price from Oracle");
+
+        uint256 tokenValueInUSD = Math.mulDiv(amount, scaledPrice, 1e18);
+
+        return tokenValueInUSD;
+    }
+
+    // Function to calculate loan asset in USD terms
+    function _getLoanDebtInUSD(uint256 amount) internal view returns (uint256) {
+        int256 tokenPrice = priceOracle.getLatestPrice(address(loanAsset));
+        uint256 scaledPrice = uint256(tokenPrice) * 1e10; // Scale to 18 decimals
+        require(scaledPrice > 0, "Invalid token price from Oracle");
+
+        uint256 debtInUSD = Math.mulDiv(amount, scaledPrice, 1e18);
+
+        return debtInUSD;
+    }
+
+    // ======= DECIMALS UTILS =======
+
+    function normalizeAmount(
+        uint256 amount,
+        uint8 decimals
+    ) internal pure returns (uint256) {
+        if (decimals == 18) return amount;
+        require(decimals < 18, "Too many decimals");
+        return amount * (10 ** (18 - decimals));
+    }
+
+    function denormalizeAmount(
+        uint256 amount,
+        uint8 decimals
+    ) internal pure returns (uint256) {
+        return amount / (10 ** (18 - decimals));
+    }
+
+    function _getLoanAssetDecimals() internal view returns (uint8) {
+        uint8 decimals = IERC20Metadata(address(loanAsset)).decimals();
+        require(decimals <= 18, "Loan asset decimals too high");
+        return decimals;
+    }
+
+    // ======= MISC INTERNAL HELPERS =======
+
+    // Function to remove an asset from userCollateralAssets[msg.sender]
+    function _removeCollateralAsset(
+        address user,
+        address collateralToken
+    ) private {
+        uint256 length = userCollateralAssets[user].length;
+        for (uint256 i = 0; i < length; i++) {
+            if (userCollateralAssets[user][i] == collateralToken) {
+                // Swap with last element and pop to avoid gaps
+                userCollateralAssets[user][i] = userCollateralAssets[user][
+                    length - 1
+                ];
+                userCollateralAssets[user].pop();
+                break;
+            }
+        }
+    }
+
     // =============================================================
     // PUBLIC TEST FUNCTIONS (for testing purposes only)
     // =============================================================
@@ -873,11 +910,7 @@ contract Market is ReentrancyGuard {
 
     function validateAndCalculateFullLiquidation(
         address user
-    )
-        external
-        view
-        returns (uint256 debtToCover, uint256 collateralToSeizeUsd)
-    {
+    ) external returns (uint256 debtToCover, uint256 collateralToSeizeUsd) {
         return _validateAndCalculateFullLiquidation(user);
     }
 
@@ -907,5 +940,16 @@ contract Market is ReentrancyGuard {
         address borrower
     ) public view returns (uint256 interestAccrued) {
         return _borrowerInterestAccrued(borrower);
+    }
+
+    function getLoanAssetDecimals() external view returns (uint8) {
+        return _getLoanAssetDecimals();
+    }
+
+    function testNormalizeAmount(
+        uint256 amount,
+        uint8 decimals
+    ) external pure returns (uint256) {
+        return normalizeAmount(amount, decimals);
     }
 }

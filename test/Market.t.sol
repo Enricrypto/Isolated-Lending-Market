@@ -112,9 +112,14 @@ contract MarketTest is Test {
         weth.transfer(user, wethAmount); // Transfer 5,000 WETH to user
         vm.stopPrank();
 
-        // Impersonate a USDC whale to send tokens to the liquidator
+        // Impersonate USDC whale to send tokens to the liquidator
         vm.startPrank(usdcWhale);
-        usdc.transfer(liquidator, initialLiquidatorBalance); // Transfer 10,000 USDC to user
+        usdc.transfer(liquidator, initialBalance); // whale transfers to liquidator
+        vm.stopPrank();
+
+        // Now impersonate liquidator to approve market
+        vm.startPrank(liquidator);
+        usdc.approve(address(market), type(uint256).max);
         vm.stopPrank();
 
         // Approve the vault contract for the lender to deposit USDC
@@ -129,11 +134,6 @@ contract MarketTest is Test {
 
         // Approve the market contract for the user to deposit USDC (repay)
         vm.startPrank(user);
-        usdc.approve(address(market), type(uint256).max);
-        vm.stopPrank();
-
-        //Approve the market contract for liquidator to transfer USDC (liquidator repayment)
-        vm.startPrank(liquidator);
         usdc.approve(address(market), type(uint256).max);
         vm.stopPrank();
 
@@ -334,18 +334,6 @@ contract MarketTest is Test {
         vault.deposit(lentAmount, lender);
         vm.stopPrank();
 
-        uint256 shares = IERC20(yearnUsdcStrategy).balanceOf(address(vault));
-        uint256 usdcInStrategy = ERC4626(yearnUsdcStrategy).convertToAssets(
-            shares
-        );
-        uint256 vaultAssets = vault.convertToAssets(vault.totalSupply());
-        uint256 liquidityBeforeBorrow = vault.availableLiquidity();
-
-        console.log("Shares hold by vault", shares);
-        console.log("USDC in strategy", usdcInStrategy);
-        console.log("vault assets", vaultAssets);
-        console.log("Available liquidity Before Borrow", liquidityBeforeBorrow);
-
         // Add collateral token to the market
         vm.startPrank(address(this));
         market.addCollateralToken(collateralToken, priceFeed);
@@ -540,92 +528,183 @@ contract MarketTest is Test {
         assertTrue(market.isHealthy(user)); // should now be healthy
     }
 
-    function testValidateAndCalculateFullLiquidation() public {
+    function testValidateAndCalculateMaxLiquidation() public {
         address collateralToken = address(weth);
         address priceFeed = wethPrice;
-        uint256 lentAmount = 10000 * 1e6; // 10000 USDC
-        uint256 depositAmount = 2 * 1e18; // WETH price: 247716064401
-        uint256 borrowAmount = 3500 * 1e6; // 3500 USDC
+        uint256 lentAmount = 10_000 * 1e6; // 10000 USDC
+        uint256 depositAmount = 2 * 1e18; // 2 WETH
+        uint256 borrowAmount = 4200 * 1e6; // 4200 USDC
 
         // ====== SETUP ======
 
-        // Lender provides liquidity
+        // Lender deposits USDC liquidity into the vault
         vm.startPrank(lender);
         vault.deposit(lentAmount, lender);
         vm.stopPrank();
 
-        // Add WETH as collateral
+        // Add WETH as collateral with proper price feed
         vm.prank(address(this));
         market.addCollateralToken(collateralToken, priceFeed);
 
-        // User deposits WETH as collateral
+        // Assert token decimals stored correctly (WETH should have 18 decimals)
+        assertEq(
+            market.tokenDecimals(collateralToken),
+            18,
+            "Incorrect token decimals stored for WETH"
+        );
+
+        // Save pre-deposit balances
+        uint256 marketBalanceBefore = weth.balanceOf(address(market));
+        uint256 userBalanceBefore = weth.balanceOf(user);
+
+        // User deposits WETH collateral
         vm.startPrank(user);
         market.depositCollateral(collateralToken, depositAmount);
         vm.stopPrank();
+
+        // Assert that user's collateral value is now non-zero
         uint256 totalCollateralBefore = market.getUserTotalCollateralValue(
             user
         );
-        console.log("Total collateral before:", totalCollateralBefore);
+        assertGt(
+            totalCollateralBefore,
+            0,
+            "Collateral value should be greater than 0 after deposit"
+        );
 
-        // User borrows 3500 USDC
+        // Assert market received the correct WETH amount
+        assertEq(
+            weth.balanceOf(address(market)),
+            marketBalanceBefore + depositAmount,
+            "Market did not receive WETH"
+        );
+
+        // Assert user's WETH balance decreased accordingly
+        assertEq(
+            weth.balanceOf(user),
+            userBalanceBefore - depositAmount,
+            "User's WETH balance not reduced correctly"
+        );
+
+        // User borrows USDC
         vm.startPrank(user);
         market.borrow(borrowAmount);
         vm.stopPrank();
-        console.log("User total debt:", market.getUserTotalDebt(user));
+
+        // Assert debt recorded
+        assertEq(
+            market.getUserTotalDebt(user),
+            market.testNormalizeAmount(borrowAmount, 6),
+            "User debt not recorded correctly"
+        );
 
         // ====== PRICE DROP SIMULATION ======
 
-        int256 oldPrice = priceOracle.getLatestPrice(collateralToken);
-        int256 newPrice = (oldPrice * 70) / 100; // 30% drop
+        // Simulate time passing
+        vm.warp(block.timestamp + 10 days);
+        market.updateGlobalBorrowIndex();
 
-        // Mock oracle to return new lower price
+        // Simulate a 30% drop in WETH price
+        int256 oldPrice = priceOracle.getLatestPrice(collateralToken);
+        int256 newPrice = (oldPrice * 70) / 100;
+
+        // Mock the oracle to return new price
         vm.mockCall(
             address(priceOracle),
             abi.encodeWithSignature("getLatestPrice(address)", collateralToken),
             abi.encode(newPrice)
         );
 
+        // Assert that the new collateral value has dropped after price change
         uint256 totalCollateralAfter = market.getUserTotalCollateralValue(user);
-        console.log("Total collateral after:", totalCollateralAfter);
+        assertLt(
+            totalCollateralAfter,
+            totalCollateralBefore,
+            "Collateral value did not decrease after price drop"
+        );
 
-        // ====== VALIDATION ======
+        // ====== LIQUIDATION VALIDATION ======
 
         vm.startPrank(liquidator);
 
-        // Retrieve liquidation values from contract
+        // Assert that user is now unhealthy and should be liquidatable
+        assertFalse(
+            market.isHealthy(user),
+            "User should be liquidatable after price drop"
+        );
+
+        // Get liquidation values
         (uint256 debtToCover, uint256 collateralToSeizeUsd) = market
-            .validateAndCalculateFullLiquidation(user);
-        // assertFalse(
-        //     market.isHealthy(user),
-        //     "User should be liquidatable after price drop"
-        // );
+            .validateAndCalculateMaxLiquidation(user);
 
-        // uint256 currentDebt = market.getUserTotalDebt(user);
-        // uint256 debtInUSD = market._loanDebtInUSD(currentDebt);
-        // uint256 collateralValue = market.getUserTotalCollateralValue(user); // in USD terms
+        // Assert calculated values are non-zero
+        assertGt(debtToCover, 0, "Debt to cover should be greater than 0");
+        assertGt(
+            collateralToSeizeUsd,
+            0,
+            "Collateral to seize should be greater than 0"
+        );
 
-        // console.log("User current debt:", currentDebt);
-        // console.log("User debt in USD terms:", debtInUSD);
-        // console.log("User total collateral value in USD:", collateralValue);
+        // Save pre-liquidation balances
+        uint256 protocolTreasuryBefore = usdc.balanceOf(protocolTreasury);
+        uint256 liquidatorUSDCBefore = usdc.balanceOf(liquidator);
+        uint256 vaultAssetsBefore = vault.totalAssets();
 
-        // (, uint256 liquidationPenalty, ) = market.marketParams();
-        // uint256 collateralToSeizeUsd = Math.mulDiv(
-        //     debtInUSD,
-        //     1e18 + liquidationPenalty,
-        //     1e18
-        // );
-        // console.log("Collateral to seize:", collateralToSeizeUsd);
+        // Liquidator repays the debt
+        market.processLiquidatorRepaymentPublic(user, liquidator, debtToCover);
 
-        //     // ====== ASSERTIONS ======
+        // Assert that vault received repayment
+        assertGt(
+            vault.totalAssets(),
+            vaultAssetsBefore,
+            "Vault totalAssets should increase after repayment"
+        );
 
-        //     assertApproxEqAbs(debtToCover, debtInUSD, 1);
-        //     assertApproxEqAbs(
-        //         collateralToSeizeUsd,
-        //         expectedCollateralToSeizeUsd,
-        //         1
-        //     );
-        //     assertLt(totalCollateralAfter, collateralToSeizeUsd); // Position is undercollateralized
+        // Assert protocol treasury received liquidation fee
+        assertGt(
+            usdc.balanceOf(protocolTreasury),
+            protocolTreasuryBefore,
+            "Protocol treasury should receive fee"
+        );
 
-        //     vm.stopPrank();
+        // Assert liquidator paid some USDC
+        assertLt(
+            usdc.balanceOf(liquidator),
+            liquidatorUSDCBefore,
+            "Liquidator USDC balance should decrease after repayment"
+        );
+
+        // Save pre-seizure WETH balances
+        uint256 liquidatorWETHBefore = weth.balanceOf(liquidator);
+
+        // Liquidator seizes collateral
+        (uint256 totalLiquidated, uint256 remainingToSeizeUsd) = market
+            .seizeCollateralPublic(user, liquidator, collateralToSeizeUsd);
+
+        uint256 liquidatorWETHAfter = weth.balanceOf(liquidator);
+
+        // Assert liquidator received WETH
+        assertGt(
+            liquidatorWETHAfter,
+            liquidatorWETHBefore,
+            "Liquidator did not receive WETH"
+        );
+
+        // Assert full collateral was liquidated (with tolerance for rounding)
+        assertApproxEqAbs(
+            totalLiquidated,
+            collateralToSeizeUsd,
+            1e12,
+            "Total liquidated does not match expected collateral to seize"
+        );
+
+        // Assert there is no leftover collateral to seize
+        assertEq(
+            remainingToSeizeUsd,
+            0,
+            "Remaining collateral to seize should be zero"
+        );
+
+        vm.stopPrank();
     }
 }

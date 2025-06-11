@@ -383,7 +383,7 @@ contract Market is ReentrancyGuard {
         (
             uint256 debtToCover,
             uint256 collateralToLiquidateUsd
-        ) = _validateAndCalculateFullLiquidation(user);
+        ) = _validateAndCalculateMaxLiquidation(user);
 
         // Step 2: Liquidator repays the borrower's debt (transfers loan tokens to protocol)
         _processLiquidatorRepayment(user, msg.sender, debtToCover);
@@ -554,7 +554,7 @@ contract Market is ReentrancyGuard {
     // ======= LIQUIDATION LOGIC =======
 
     // Helper function to validate and calculate full liquidation
-    function _validateAndCalculateFullLiquidation(
+    function _validateAndCalculateMaxLiquidation(
         address user
     ) internal returns (uint256 debtToCover, uint256 collateralToSeizeUsd) {
         require(!_isHealthy(user), "User not eligible for liquidation");
@@ -600,7 +600,7 @@ contract Market is ReentrancyGuard {
         // Transfer the repayment amount from liquidator to this contract
         // denormalizeAmount converts from normalized 18 decimals to raw token decimals
         require(
-            IERC20(loanAsset).transferFrom(
+            loanAsset.transferFrom(
                 liquidator,
                 address(this),
                 denormalizeAmount(debtToCover, loanDecimals)
@@ -633,9 +633,14 @@ contract Market is ReentrancyGuard {
         );
 
         // Calculate principal repayment portion (normalized 18 decimals)
-        uint256 principalRepayment = debtToCover > interestAccrued
-            ? debtToCover - interestAccrued
-            : 0;
+        // If principalRepayment can be more than userTotalDebt[user], cap it
+        uint256 principalRepayment = 0;
+        if (debtToCover > interestAccrued) {
+            principalRepayment = debtToCover - interestAccrued;
+            if (principalRepayment > userTotalDebt[borrower]) {
+                principalRepayment = userTotalDebt[borrower];
+            }
+        }
 
         // Update user debt and total borrows in normalized units
         userTotalDebt[borrower] -= principalRepayment;
@@ -748,10 +753,10 @@ contract Market is ReentrancyGuard {
 
         require(userTotalDebt[user] >= unrecovered, "Insufficient user debt");
 
-        userTotalDebt[user] -= unrecovered;
-        userTotalDebt[badDebtAddress] += unrecovered;
+        userTotalDebt[user] -= unrecovered; // user no longer "owes" this portion, because they’ve been liquidated
+        userTotalDebt[badDebtAddress] += unrecovered; // amount was not recovered and is now considered protocol-level bad debt.
 
-        unrecoveredDebt[user] += unrecovered;
+        unrecoveredDebt[user] += unrecovered; // use this for stats, UI, or future penalties if desired
 
         emit BadDebtTransferred(user, badDebtAddress, unrecovered);
     }
@@ -908,10 +913,10 @@ contract Market is ReentrancyGuard {
         return _getLoanDebtInUSD(amount);
     }
 
-    function validateAndCalculateFullLiquidation(
+    function validateAndCalculateMaxLiquidation(
         address user
     ) external returns (uint256 debtToCover, uint256 collateralToSeizeUsd) {
-        return _validateAndCalculateFullLiquidation(user);
+        return _validateAndCalculateMaxLiquidation(user);
     }
 
     function processLiquidatorRepaymentPublic(
@@ -951,5 +956,16 @@ contract Market is ReentrancyGuard {
         uint8 decimals
     ) external pure returns (uint256) {
         return normalizeAmount(amount, decimals);
+    }
+
+    function testDenormalizeAmount(
+        uint256 amount,
+        uint8 decimals
+    ) external pure returns (uint256) {
+        return denormalizeAmount(amount, decimals);
+    }
+
+    function getBadDebt(address user) external view returns (uint256) {
+        return unrecoveredDebt[user];
     }
 }

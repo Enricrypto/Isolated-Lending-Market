@@ -1,41 +1,48 @@
 # Overview
-The Isolated Lending Market Protocol is a modular, extendable, and permissionless lending platform built on Solidity. It provides a flexible framework for decentralized lending, enabling users to deposit collateral, borrow assets, and lend tokens within isolated, individual markets. The protocol is designed with scalability and modularity in mind, ensuring future flexibility and easy upgrades via distinct contract modules.
+The Isolated Lending Market Protocol is a modular, extendable, and permissionless lending platform built with Solidity. It provides a flexible framework for decentralized lending, enabling users to deposit collateral, borrow assets, and lend tokens within isolated markets. The protocol is designed for scalability and upgradability through separate, purpose-built modules. Additionally, idle funds in the vaults can be deployed into yield-generating strategies for enhanced capital efficiency.
 
 # Key Features
-ERC-4626 Vault Implementation
-The protocol uses the ERC-4626 standard for vaults, enabling seamless management of assets and vault shares. Users can deposit and withdraw assets within the vaults, receiving shares that represent their stake in the vault.
-Note: This vault supports internal lending. For full economic accounting (including borrowed funds), use totalBackingAssets(). Standard ERC4626 integrations should use totalAssets() which excludes borrowed funds.
+Strategy-Integrated ERC-4626 Vaults
+The protocol leverages the ERC-4626 standard for managing borrowable assets. Users deposit tokens into a Vault and receive shares that represent their proportional ownership. Unlike standard ERC-4626 implementations, this vault integrates with external strategies to maximize asset utilization.
 
-# Collateral Management
-Users can deposit collateral into the market for borrowing. Collateral is tracked per-user and per-collateral-token basis. The protocol calculates the maximum borrowing power based on collateral value and a predefined Loan-to-Value (LTV) ratio. The protocol also tracks collateral utilization to help users monitor their risk levels.
+# Idle vs Backing Assets:
+- totalAssets(): Returns the total backing of the vault, including assets currently deployed in the strategy plus outstanding borrowed funds (market.totalBorrowsWithInterest()). This provides a full accounting of assets the vault is responsible for, useful for internal tracking and risk management, not standard ERC-4626 integrations.
+- totalStrategyAssets(): Returns only the amount of assets currently deployed in the strategy (excluding borrowed amounts and idle assets).
+- availableLiquidity(): Reflects how much of the strategy’s assets the vault can immediately withdraw, i.e., the actual liquidity available for user redemptions and withdrawals.
 
-# Borrowing and Debt Management
-Users can borrow assets against their collateral, as long as they remain within the allowable LTV ratio. Borrowing power is dynamically calculated based on the user's collateral balance and current debt. The protocol ensures users can only borrow up to a percentage of their collateral's value, preventing over-leveraging.
+# Collateral and Risk Management
+Users can deposit supported tokens as collateral, tracked on a per-user and per-token basis. Collateral value is used to determine the borrowing capacity based on a defined Loan-to-Value (LTV) ratio. The system tracks utilization and automatically enforces LTV constraints during borrowing and collateral withdrawal.
 
-# Lending and Borrowable Vaults
-Users can lend assets by depositing them into the borrowable vaults (ERC-4626), earning vault shares in return. Borrowable assets are stored in separate vaults, each linked to a specific token. The protocol tracks the amount lent by each user.
+# Borrowing and Repayment
+Users may borrow assets from the vault against their collateral, provided they remain within their LTV bounds. Borrowed funds are tracked internally and interest accrues over time based on a dynamic interest rate model. Repayments reduce outstanding debt and allow users to reclaim collateral.
 
-# Modular and Permissionless
-The protocol is modular, allowing new collateral types, borrowable tokens, and vaults to be added. It supports permissionless interaction, enabling anyone to contribute by adding new collateral types or borrowable assets.
+# Lending Through Vaults
+Lenders provide liquidity by depositing tokens into ERC-4626-compatible vaults. In return, they receive vault shares, which accrue value over time as interest is repaid by borrowers. Funds not immediately lent out are allocated to external strategies to maximize yield until needed.
 
-# Core Contract Functions
-1. Vault Contract (ERC-4626)
-- deposit: Allows users to deposit tokens, minting vault shares.
-- withdraw: Allows users to withdraw tokens, burning vault shares.
-- totalAssets: Returns the total assets held in the vault.
-- totalIdle: Retrieves the total idle assets.
-- maxWithdraw: Calculates the maximum withdrawal amount for the user.
-- maxRedeem: Retrieves the maximum redeemable shares for the user.
+# Modular and Permissionless Architecture
+Each market is isolated and independently configurable. New markets can be deployed permissionlessly, each with its own vault, collateral types, interest model, and oracle configuration. This modularity allows tailored risk settings per asset pair and easy protocol extension.
 
-2. Market Contract
-- addCollateralToken: Adds a new collateral token type.
-- removeCollateralToken: Removes an existing collateral token type.
-- depositCollateral: Deposits collateral for borrowing.
-- withdrawCollateral: Withdraws collateral, maintaining the LTV ratio.
-- borrow & repay: Allows users to borrow and repay tokens.
-- set and get LTV ratio: Admin functions to set and retrieve LTV ratios for borrowable tokens.
-- getTotalCollateralValue: Calculates the total value of a user's collateral.
-- calculateBorrowerAccruedInterest: Tracks and calculates accrued interest for borrowers.
+# Core Contracts and Functions
+1. Vault (ERC-4626 + Strategy Integration)
+- deposit: Accepts assets and mints shares, then deposits assets into strategy.
+- mint: Mints exact shares and deposits the required asset amount into strategy.
+- withdraw: Withdraws assets (pulling from strategy if needed), burns shares.
+- redeem: Burns shares, pulls underlying assets from strategy, then transfers to user.
+- totalAssets: Returns vault’s idle + strategy-held assets, excluding borrowed funds.
+- totalBackingAssets: Returns the full backing including borrowed assets, for internal accounting.
+- maxWithdraw / maxRedeem: Limits based on user balance and vault’s available liquidity.
+- setMarket: Links the vault to a Market contract for authorized borrowing/repayment.
+- adminBorrow / adminRepay: Authorized borrowing and repayment between the vault and linked market.
+
+2. Market (Borrowing, Collateral, and Accounting)
+- addCollateralToken / removeCollateralToken: Enables or disables supported collateral types.
+- depositCollateral: Users deposit tokens to gain borrowing capacity.
+- withdrawCollateral: Users reclaim unused collateral, provided LTV remains healthy.
+- borrow: Allows users to borrow from the linked vault, increasing their debt position.
+- repay: Repays outstanding debt and reduces liability.
+- setMarketParameters: Sets LTV, liquidation penalty, and protocol fee per market.
+- getTotalCollateralValue: Calculates a user's total collateral value based on oracle prices.
+- calculateBorrowerAccruedInterest: Computes accrued interest for borrowers over time.
 
 3. Pricing Contract
 - addPriceFeed: Adds a price feed for supported tokens.

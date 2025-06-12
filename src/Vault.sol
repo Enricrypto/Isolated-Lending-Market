@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "lib/openzeppelin-contracts/contracts/token/ERC20/extensions/ERC4626.sol";
+import "lib/openzeppelin-contracts/contracts/interfaces/IERC4626.sol";
 import "lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol";
 import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import "lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
@@ -12,7 +13,7 @@ contract Vault is ERC4626, ReentrancyGuard {
     using Math for uint256;
 
     Market public market; // Store the market
-    ERC4626 public strategy;
+    IERC4626 public strategy;
     address public marketOwner;
 
     //Events
@@ -90,6 +91,7 @@ contract Vault is ERC4626, ReentrancyGuard {
             address(this),
             address(this)
         );
+        require(amountRedeemed > 0, "No funds in strategy to redeem");
 
         emit StrategyChanged(address(strategy), _newStrategy);
         emit StrategyFundsRedeemed(amountRedeemed);
@@ -128,20 +130,21 @@ contract Vault is ERC4626, ReentrancyGuard {
     }
 
     function withdraw(
-        uint256 amount,
+        uint256 assets,
         address receiver,
-        address user
+        address owner
     ) public override nonReentrant returns (uint256 shares) {
         require(
-            amount <= availableLiquidity(),
+            assets <= availableLiquidity(),
             "Vault: Insufficient liquidity"
         );
 
-        // Always pull required assets back from the strategy
-        strategy.withdraw(amount, address(this), address(this));
+        shares = previewWithdraw(assets); // Lock in required shares before strategy state changes
 
-        // Burn shares and transfer assets from vault to user
-        shares = super.withdraw(amount, receiver, user);
+        // Always pull required assets back from the strategy
+        strategy.withdraw(assets, address(this), address(this));
+
+        _withdraw(msg.sender, receiver, owner, assets, shares); // Burn shares and transfer assets
 
         return shares;
     }
@@ -197,29 +200,75 @@ contract Vault is ERC4626, ReentrancyGuard {
 
         uint256 userShares = balanceOf(user);
         uint256 totalShares = totalSupply();
+        if (totalShares == 0) return 0; // avoid div-by-zero
         // User can withdraw a proportion of the strategy assets, based on their share ownership
         // (userShares * strategyAssets) / totalShares
-        return
-            userShares.mulDiv(strategyAssets, totalShares, Math.Rounding.Floor);
+        uint256 userProportionalAssets = userShares.mulDiv(
+            strategyAssets,
+            totalShares,
+            Math.Rounding.Floor
+        );
+
+        // If user's withdrawable amount is more than liquidity, cap it to liquidity
+        return Math.min(userProportionalAssets, availableLiquidity());
     }
 
     function maxRedeem(address user) public view override returns (uint256) {
-        return balanceOf(user); // number of shares a user can redeem
+        uint256 userShares = balanceOf(user);
+        uint256 totalShares = totalSupply();
+        uint256 liquidity = availableLiquidity();
+        uint256 strategyAssets = totalStrategyAssets();
+
+        if (totalShares == 0 || strategyAssets == 0) return 0;
+
+        // Max shares user can redeem, based on how much liquidity is available
+        uint256 maxSharesFromLiquidity = liquidity.mulDiv(
+            totalShares,
+            strategyAssets,
+            Math.Rounding.Floor
+        );
+
+        return Math.min(userShares, maxSharesFromLiquidity);
     }
 
+    // add to deposit into strategy
     function mint(
         uint256 shares,
         address receiver
     ) public override nonReentrant returns (uint256 assets) {
-        return super.mint(shares, receiver);
+        // Call the parent function which handles pulling in tokens and minting shares
+        assets = super.mint(shares, receiver);
+
+        // After mint, if a strategy is set, forward the assets to it
+        if (address(strategy) != address(0)) {
+            strategy.deposit(assets, address(this));
+        }
+
+        return assets;
     }
 
+    // add to withdraw from strategy
     function redeem(
         uint256 shares,
         address receiver,
-        address shareOwner
+        address owner
     ) public override nonReentrant returns (uint256 assets) {
-        return super.redeem(shares, receiver, shareOwner);
+        // Determine the amount of assets equivalent to the shares
+        assets = previewRedeem(shares);
+
+        // Ensure there's enough liquidity
+        require(
+            assets <= availableLiquidity(),
+            "Vault: Insufficient liquidity"
+        );
+
+        // Pull assets from strategy before redeeming shares
+        strategy.withdraw(assets, address(this), address(this));
+
+        // Burn the shares and transfer assets to receiver
+        _withdraw(msg.sender, receiver, owner, assets, shares);
+
+        return assets;
     }
 
     function getStrategy() external view returns (address) {

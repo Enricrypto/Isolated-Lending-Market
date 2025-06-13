@@ -407,4 +407,73 @@ contract VaultTest is Test {
             "Strategy assets didn't increase correctly"
         );
     }
+
+    // EDGE CASES TESTING
+
+    function testWithdrawExceedsLiquidity() public {
+        uint256 depositAmount = 5000 * 1e6;
+
+        // Step 1: Deposit funds into vault
+        vm.prank(lender);
+        vault.deposit(depositAmount, lender);
+
+        // Step 2: Simulate strategy withdrawing/deploying funds so vault liquidity is low or zero
+        // You can simulate by withdrawing all vault USDC balance to strategy, so vault liquidity is 0
+        // The vault’s availableLiquidity() should reflect that.
+        uint256 vaultLiquidity = vault.availableLiquidity();
+
+        // Just in case, sanity check:
+        console.log("Vault available liquidity:", vaultLiquidity);
+        assertLe(vaultLiquidity, depositAmount);
+
+        // Step 3: Attempt to withdraw more than vault’s available liquidity
+        uint256 withdrawAmount = vaultLiquidity + 1;
+
+        vm.prank(lender);
+        vm.expectRevert(bytes("Vault: Insufficient liquidity"));
+        vault.withdraw(withdrawAmount, lender, lender);
+    }
+
+    function testMintInsufficientFunds() public {
+        uint256 sharesToMint = 1_000_000 * 1e6; // A very large amount (e.g. 1 million USDC shares)
+
+        // Ensure lender balance is less than needed (e.g., lender has 10,000 USDC from setup)
+        uint256 lenderBalance = usdc.balanceOf(lender);
+        assertLt(
+            lenderBalance,
+            sharesToMint,
+            "Lender unexpectedly has enough balance"
+        );
+
+        // Lender tries to mint more shares than balance allows
+        vm.startPrank(lender);
+        vm.expectRevert(); // ERC20 transferFrom will revert due to insufficient balance or allowance
+        vault.mint(sharesToMint, lender);
+        vm.stopPrank();
+    }
+
+    function testUnauthorizedAdminCalls() public {
+        address unauthorizedUser = address(0x999);
+
+        vm.startPrank(unauthorizedUser);
+
+        // Test onlyMarketOwner functions
+        vm.expectRevert("Not market owner");
+        vault.setMarket(address(market));
+
+        vm.expectRevert("Not market owner");
+        vault.changeStrategy(address(0x1234)); // example strategy address
+
+        vm.expectRevert("Not market owner");
+        vault.transferMarketOwnership(address(0x1234));
+
+        // Test onlyMarket functions
+        vm.expectRevert("Not market");
+        vault.adminBorrow(1000 * 1e6);
+
+        vm.expectRevert("Not market");
+        vault.adminRepay(1000 * 1e6);
+
+        vm.stopPrank();
+    }
 }

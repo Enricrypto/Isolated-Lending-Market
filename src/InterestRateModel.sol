@@ -17,7 +17,7 @@ contract InterestRateModel {
     Vault public vaultContract;
     Market public marketContract; // Address of marketContract to fetch supply/borrow data
 
-    event InterestRateUpdated(address indexed asset, uint256 rate);
+    event InterestRateUpdated(uint256 rate);
 
     constructor(
         uint256 _baseRate,
@@ -51,6 +51,7 @@ contract InterestRateModel {
 
     function setBaseRate(uint256 _newBaseRate) external onlyOwner {
         baseRate = _newBaseRate;
+        emit InterestRateUpdated(baseRate);
     }
 
     function setOptimalUtilization(

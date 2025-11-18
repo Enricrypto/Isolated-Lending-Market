@@ -1,4 +1,3 @@
-````markdown
 # 🏦 Integrated DeFi Lending Market Protocol
 
 The Integrated DeFi Lending Market Protocol is a single-asset, collateralized lending platform built on Solidity, engineered for **capital efficiency** and **solvency**. The protocol uses a robust, non-upgradeable $\text{Market}$ ledger, linked to specialized external contracts for dynamic pricing and interest. The core feature is its liquidity management: all deposited funds flow through an **ERC-4626 Vault** and are automatically deployed into an external **yield-generating strategy**, ensuring lenders earn optimized returns.
@@ -14,38 +13,40 @@ The protocol's structure is highly integrated and composed of four key contracts
 3.  **`InterestRateModel.sol`**: Calculates the dynamic borrowing rate based on utilization.
 4.  **`PriceOracle.sol`**: Provides decentralized USD price feeds for all assets.
 
+
 ---
 
 ## 💡 Key Features and Mechanisms
 
 ### 1. Risk Management and Solvency
 
-- **Integrated Risk:** Solvency is enforced via a comprehensive **Health Factor** calculation ($\text{LLTV} + \text{Liquidation Penalty}$) and supported by a decentralized $\text{Price Oracle}$.
-- **Withdrawal Safety:** Users can only `withdrawCollateral` if their position remains **healthy** ($\text{HF} \ge 1$).
-- **Solvency Guarantee:** The $\text{Market}$ contains integrated $\text{Bad Debt}$ handling within its $\text{liquidate}$ function, ensuring protocol integrity when collateral is seized.
+* **Integrated Risk:** Solvency is enforced via a comprehensive **Health Factor** calculation ($\text{LLTV} + \text{Liquidation Penalty}$) and supported by a decentralized $\text{Price Oracle}$.
+* **Withdrawal Safety:** Users can only `withdrawCollateral` if their position remains **healthy** ($\text{HF} \ge 1$).
+* **Solvency Guarantee:** The $\text{Market}$ contains integrated $\text{Bad Debt}$ handling within its $\text{liquidate}$ function, ensuring protocol integrity when collateral is seized.
 
 ### 2. Dynamic Interest Rate Model
 
 Interest is determined by a **Jump-Rate Model** (`InterestRateModel`) which dynamically adjusts the borrow rate based on market utilization, promoting liquidity stability.
 
-- The rate adjusts steeply above an optimal utilization threshold to incentivize repayments.
+* The rate adjusts steeply above an optimal utilization threshold to incentivize repayments.
+
 
 ### 3. Liquidity and Yield Optimization
 
-- **ERC-4626 Standard:** The `Vault` adheres to the $\text{ERC-4626}$ standard, issuing shares to lenders and acting as a yield-bearing wrapper for the $\text{loanAsset}$.
-- **Strategy-Enabled:** Deposited funds are automatically deployed into an external **yield-generating strategy**, ensuring high capital efficiency.
-- **Market-Only Access:** The `Vault` reserves its critical liquidity functions (`adminBorrow`, `adminRepay`) exclusively for the trusted `Market` contract.
+* **ERC-4626 Standard:** The `Vault` adheres to the $\text{ERC-4626}$ standard, issuing shares to lenders and acting as a yield-bearing wrapper for the $\text{loanAsset}$.
+* **Strategy-Enabled:** Deposited funds are automatically deployed into an external **yield-generating strategy**, ensuring high capital efficiency.
+* **Market-Only Access:** The `Vault` reserves its critical liquidity functions (`adminBorrow`, `adminRepay`) exclusively for the trusted `Market` contract.
 
 ---
 
 ## ⚙️ Core Contract Functions (Market Ledger)
 
-| Function            | Role                                                                                                               |
-| :------------------ | :----------------------------------------------------------------------------------------------------------------- |
-| `depositCollateral` | Transfers collateral from the user; updates normalized balances.                                                   |
-| `borrow`            | Allows borrowing up to the collateralized $\text{LLTV}$ limit, utilizing liquidity from the $\text{Vault}$.        |
-| `repay`             | Covers principal and accrued interest; interest is split between the $\text{Vault}$ and $\text{protocolTreasury}$. |
-| `liquidate`         | Allows external users to repay an unhealthy borrower's debt and seize collateral plus penalty.                     |
+| Function | Role |
+| :--- | :--- |
+| `depositCollateral` | Transfers collateral from the user; updates normalized balances. |
+| `borrow` | Allows borrowing up to the collateralized $\text{LLTV}$ limit, utilizing liquidity from the $\text{Vault}$. |
+| `repay` | Covers principal and accrued interest; interest is split between the $\text{Vault}$ and $\text{protocolTreasury}$. |
+| `liquidate` | Allows external users to repay an unhealthy borrower's debt and seize collateral plus penalty. |
 
 ---
 
@@ -60,8 +61,6 @@ You must have **Foundry** installed. If not, run:
 ```bash
 curl -L [https://foundry.paradigm.xyz](https://foundry.paradigm.xyz) | bash
 # Then follow the on-screen instructions to finish the installation.
-```
-````
 
 ### Installation
 

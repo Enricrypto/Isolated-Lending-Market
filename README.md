@@ -1,5 +1,3 @@
-Here is the complete `README.md` file, incorporating the project description, the architecture, the features, and the developer instructions for setup and testing.
-
 ````markdown
 # 🏦 Integrated DeFi Lending Market Protocol
 

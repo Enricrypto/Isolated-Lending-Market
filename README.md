@@ -1,81 +1,88 @@
-# Overview
-The Isolated Lending Market Protocol is a modular, extendable, and permissionless lending platform built on Solidity. It provides a flexible framework for decentralized lending, enabling users to deposit collateral, borrow assets, and lend tokens within isolated, individual markets. The protocol is built with scalability in mind, ensuring future flexibility through modular contract design and allowing for easy upgrades and expansion.
+# 🏦 DeFi Lending Market Protocol
 
-# Key Features
-1. ERC-4626 Vault Implementation
-The protocol uses the ERC-4626 standard for vaults, which enables seamless management of assets and vault shares. Users can deposit and withdraw assets within the vaults while receiving shares that represent their stake in the vault.
+The Isolated Lending Market Protocol is a modular, high-efficiency lending platform designed to provide a secure environment for users to deposit collateral, borrow a single loan asset, and earn yield. It is built on a robust, integrated architecture featuring dynamic interest rates and comprehensive liquidation logic.
 
-2. Collateral Management
-Users can deposit collateral into the market for borrowing.
-Collateral is tracked on a per-user and per-collateral-token basis.
-The protocol calculates the maximum borrowing power based on the collateral value and a predefined Loan-to-Value (LTV) ratio.
-The protocol also tracks the collateral utilization to help users monitor their risk levels.
+---
 
-3. Borrowing and Debt Management
-Users can borrow assets against their collateral, as long as they remain within the allowable LTV ratio.
-Borrowing power is dynamically calculated based on the user's collateral balance and current debt.
-The protocol ensures that users can only borrow up to a percentage of their collateral's value, preventing over-leveraging.
+## 🏗️ Core Architecture
 
-4. Lending and Borrowable Vaults
-Users can lend assets by depositing them into the borrowable vaults (ERC-4626), where they earn vault shares in return for their deposits.
-Borrowable assets are stored in separate vaults, each linked to a specific token.
-When users deposit loan tokens into the vault, the contract tracks the amount lent by each user.
+The protocol is composed of four highly interconnected smart contracts:
 
-5. Modular and Permissionless
-The protocol is built to be modular, with the ability to add new collateral types, borrowable tokens, and vaults.
-It is designed to support permissionless interaction, where anyone can contribute by adding new collateral types or implementing new borrowable assets.
+1.  **`Market.sol`**: The central ledger for all debt and collateral, managing user positions and liquidation rules.
+2.  **`Vault.sol` (ERC-4626)**: The liquidity pool for the single $\text{loanAsset}$, optimized for capital efficiency through an external yield-generating $\text{Strategy}$.
+3.  **`InterestRateModel.sol`**: Calculates the dynamic borrowing rate based on market utilization.
+4.  **`PriceOracle.sol`**: Provides decentralized, reliable USD price feeds for all collateral and the loan asset.
 
-# Core Contract Functions: 
+---
 
-1. Deposit and Withdraw loan Tokens
-deposit(uint256 amount): Allows users to deposit loan tokens into a vault, increasing their balance and minting corresponding vault shares. 
-As well, you can deposit loan tokens to accrue yield. 
-withdraw(uint256 amount): Allows users to withdraw loan tokens from a vault, reducing their balance and burning corresponding vault shares.
+## 💰 Key Financial Mechanisms
 
-2. Borrowing
-borrow(address borrowableToken, uint256 amount): Allows users to borrow a specified amount of a borrowable token, provided they stay within their available borrowing power based on their collateral and LTV ratio.
+### 1. Collateral Management and Risk Tracking
 
-3. Collateral Management
-depositCollateral(address collateralToken, uint256 amount): Allows users to deposit collateral into the market, which is tracked individually for each user and collateral type.
-withdrawCollateral(address collateralToken, uint256 amount): Allows users to withdraw collateral from the market, as long as they stay within their borrowing constraints (LTV ratio).
+The `Market` contract is responsible for tracking user solvency using the **Health Factor ($\text{HF}$)**.
 
-4. LTV Ratio and Borrowing Power
-setLTVRatio(address borrowableToken, uint256 ratio): Admin function to set the Loan-to-Value (LTV) ratio for a specific borrowable token.
-getLTVRatio(address borrowableToken): Retrieves the LTV ratio for a borrowable token.
-getBorrowingPower(address user): Calculates the maximum amount a user can borrow, based on their collateral balance and LTV ratio.
+- **Deposits & Tracking:** Collateral tokens are deposited into the $\text{Market}$ and tracked internally using **18-decimal normalized units** for consistent USD valuation.
+- **Borrowing Power:** Determined by the $\text{Liquidation Loan-to-Value}$ ($\text{LLTV}$) ratio.
+- **Withdrawal Safety:** Users can only `withdrawCollateral` if their position remains **healthy** ($\text{HF} \ge 1$).
 
-5. Supporting Functions
-getTotalCollateralValue(address user): Returns the total collateral value of a user, considering all collateral tokens they have deposited (can later incorporate price oracles).
-getCollateralTokens(): Returns the list of collateral tokens supported by the market.
+The **Health Factor** is the primary risk metric:
+$$\text{Health Factor} = \frac{\text{Collateral Value}_{\text{USD}} \times \text{LLTV}}{\text{Borrowed Amount}_{\text{USD}} \times (1 + \text{Liquidation Penalty})}$$
 
-# Future Enhancements
-The protocol is designed with modularity in mind, and future enhancements will include the separation of core functionality into distinct modules:
+### 2. Dynamic Interest Rate Model
 
-*Oracle Module*: For providing dynamic price feeds of collateral and borrowed assets.
+The **`InterestRateModel`** implements a **Jump-Rate Model** to govern the cost of borrowing, ensuring liquidity protection during periods of high demand.
 
-*Interest Rate Module*: For calculating interest rates for borrowers.
+- **Utilization Rate:** The rate is dynamically adjusted based on the ratio of $\text{totalBorrows}$ to $\text{totalAssets}$ (liquidity).
+- **Rate Kink:** The model uses $\text{slope1}$ for utilization below an optimal threshold, and a much steeper $\text{slope2}$ above it. This incentivizes repayment when liquidity is scarce.
 
-*Factory Module*: For enabling the deployment of new lending markets with customizable parameters.
+### 3. Liquidity and Yield Management
 
-*Liquidation Module*: For handling the liquidation of collateral in cases of over-leveraging or default.
+The **`Vault`** contract leverages the **ERC-4626 standard** for efficiency and includes an integrated yield strategy.
 
-# Smart Contract Architecture
-*Vault Contract (ERC-4626)*
-The Vault contract is the foundation for managing the deposit and withdrawal of tokens. It adheres to the ERC-4626 standard, which ensures compatibility with any ERC-20 token that can be deposited or withdrawn.
+- **Lending:** Lenders deposit the $\text{loanAsset}$ and receive $\text{Vault Shares}$ ($\text{ERC20}$ tokens) representing their pro-rata ownership of the principal and accrued yield.
+- **Yield Strategy:** Idle assets in the $\text{Vault}$ are automatically deployed into an external, high-yield $\text{Strategy}$ vault, maximizing returns for lenders.
+- **Access Control:** The `adminBorrow` and `adminRepay` functions are strictly restricted to the `Market` contract, ensuring the $\text{Vault}$ only services approved lending operations.
 
-Deposit: When users deposit tokens, they receive vault shares in return, representing their ownership in the vault.
-Withdraw: When users withdraw tokens, they must burn an equivalent number of vault shares.
+### 4. Liquidation and Solvency
 
-*Market Contract*
-The Market contract manages the entire lending and borrowing process. It allows users to:
+The $\text{Market}$ contract contains a comprehensive $\text{liquidate}$ function for maintaining protocol solvency.
 
-Deposit collateral and borrow against it.
-Lend assets by depositing them into ERC-4626 vaults.
-Borrow tokens against their collateral and track their borrowing amounts.
-Additionally, the Market contract is responsible for managing the LTV ratios and ensuring users stay within their borrowing limits.
+- **Liquidation Trigger:** Any external user can call $\text{liquidate}$ if a borrower's $\text{Health Factor}$ drops below $1$.
+- **Collateral Seizing:** The liquidator repays the borrower's debt and receives the required collateral amount, plus the configured **Liquidation Penalty**, in return.
+- **Bad Debt Handling:** In the event that seized collateral is insufficient to cover the debt, the unrecovered principal is tracked and transferred to the designated $\text{badDebtAddress}$ for protocol risk management.
 
-<img width="641" alt="Isolated Lending Market Architecture" src="https://github.com/user-attachments/assets/60e0c870-a229-4a5c-82eb-0d8eabf34b9a" />
+---
 
-<img width="661" alt="Screenshot 2025-01-29 at 22 33 36" src="https://github.com/user-attachments/assets/4456df11-1ea0-45e3-bade-23ae6ec0c057" />
+## 🛠️ Contract Details and Dependencies
 
+### `Market.sol`
 
+| Function              | Role                                                                                                                        |
+| :-------------------- | :-------------------------------------------------------------------------------------------------------------------------- |
+| `setMarketParameters` | Admin function to configure $\text{LLTV}$, $\text{liquidationPenalty}$, and $\text{protocolFeeRate}$.                       |
+| `addCollateralToken`  | Admin function to support a new collateral asset and link its $\text{PriceOracle}$ feed.                                    |
+| `repay`               | Handles principal and interest. The interest portion is split between the $\text{Vault}$ and the $\text{protocolTreasury}$. |
+
+### `Vault.sol`
+
+| Feature             | Description                                                                                                                                          |
+| :------------------ | :--------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Inheritance**     | Inherits from OpenZeppelin's $\text{ERC4626}$ and $\text{ReentrancyGuard}$.                                                                          |
+| **Total Assets**    | Calculated as $\text{totalStrategyAssets} + \text{market.totalBorrowsWithInterest()}$.                                                               |
+| **Strategy Change** | The $\text{changeStrategy}$ function is $\text{nonReentrant}$ to safely withdraw all assets from the old strategy and deposit them into the new one. |
+
+### `PriceOracle.sol`
+
+- Acts as a mapping between an asset address and its **Chainlink $\text{AggregatorV3Interface}$** feed.
+- Provides the external USD value used for all collateral and debt valuation within the $\text{Market}$.
+
+---
+
+## 🔐 Security and Administrative Control
+
+| Mechanism                    | Contract(s)       | Purpose                                                                                        |
+| :--------------------------- | :---------------- | :--------------------------------------------------------------------------------------------- |
+| **`pragma solidity ^0.8.0`** | All               | Enforces Solidity $0.8$ boundary checks for overflow/underflow safety.                         |
+| **`nonReentrant`**           | `Market`, `Vault` | Prevents re-entrancy attacks on all critical state-changing functions.                         |
+| **`onlyOwner`**              | All               | Restricts configuration changes to the contract owner.                                         |
+| **`onlyMarket`**             | `Vault`           | Restricts liquidity operations (`adminBorrow`, `adminRepay`) to the trusted `Market` contract. |

@@ -100,6 +100,3 @@ The contracts must be deployed in a specific sequence due to their dependencies:
     - Call `setMarketContract` on the `Vault` and `InterestRateModel` to link the final `Market` address.
     - The `Market` owner must call $\text{addCollateralToken}$ to register all supported collateral assets and their $\text{PriceOracle}$ feeds.
 
-```
-
-```

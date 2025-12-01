@@ -495,7 +495,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 Your Name - [@yourtwitter](https://twitter.com/yourtwitter)
 
-Project Link: [https://github.com/yourusername/isolated-lending-market](https://github.com/enricrypto/isolated-lending-market)
+Project Link: [https://github.com/yourusername/isolated-lending-market](https://github.com/Enricrypto/isolated-lending-market)
 
 ---
 

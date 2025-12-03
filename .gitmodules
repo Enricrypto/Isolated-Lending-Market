@@ -4,15 +4,6 @@
 [submodule "lib/openzeppelin-contracts"]
 	path = lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-<<<<<<< HEAD
 [submodule "lib/chainlink-brownie-contracts"]
 	path = lib/chainlink-brownie-contracts
 	url = https://github.com/smartcontractkit/chainlink-brownie-contracts
-=======
-[submodule "lib/chainlink-local"]
-	path = lib/chainlink-local
-	url = https://github.com/smartcontractkit/chainlink-local
-[submodule "lib/aave-v3-origin"]
-	path = lib/aave-v3-origin
-	url = https://github.com/aave-dao/aave-v3-origin.git
->>>>>>> 28d30a4da65f16c00890903cf887c8cf66972cd1

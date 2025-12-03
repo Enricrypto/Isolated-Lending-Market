@@ -715,9 +715,7 @@ This project is licensed under the MIT License.
 
 ## 📞 Contact
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/yourusername/defi-lending-platform/issues)
-- **Documentation**: Coming soon at docs.yourproject.com
-- **Security**: security@yourproject.com
+- **GitHub Issues**: [Report bugs or request features](https://github.com/Enricrypto/defi-lending-platform/issues)
 
 ---
 

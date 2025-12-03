@@ -1,7 +1,10 @@
 name: CI
 
+<<<<<<< HEAD
 permissions: {}
 
+=======
+>>>>>>> 28d30a4da65f16c00890903cf887c8cf66972cd1
 on:
   push:
   pull_request:
@@ -12,6 +15,7 @@ env:
 
 jobs:
   check:
+<<<<<<< HEAD
     name: Foundry project
     runs-on: ubuntu-latest
     permissions:
@@ -20,12 +24,23 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+=======
+    strategy:
+      fail-fast: true
+
+    name: Foundry project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+>>>>>>> 28d30a4da65f16c00890903cf887c8cf66972cd1
           submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
       - name: Show Forge version
+<<<<<<< HEAD
         run: forge --version
 
       - name: Run Forge fmt
@@ -36,3 +51,22 @@ jobs:
 
       - name: Run Forge tests
         run: forge test -vvv
+=======
+        run: |
+          forge --version
+
+      - name: Run Forge fmt
+        run: |
+          forge fmt --check
+        id: fmt
+
+      - name: Run Forge build
+        run: |
+          forge build --sizes
+        id: build
+
+      - name: Run Forge tests
+        run: |
+          forge test -vvv
+        id: test
+>>>>>>> 28d30a4da65f16c00890903cf887c8cf66972cd1

@@ -1,0 +1,29 @@
+{
+  "chainId": 11155111,
+  "network": "sepolia",
+  "deployedAt": "2025-01-18",
+  "contracts": {
+    "MarketV1": {
+      "address": "0x383bbcd792d6c60f6b87ae7522cfccfac9b68266",
+      "type": "implementation"
+    },
+    "MarketProxy": {
+      "address": "0xbe4fd219b17c3e55562c9bd9254bc3f3519d4bb6",
+      "type": "proxy",
+      "implementation": "MarketV1",
+      "note": "This is the address users should interact with"
+    },
+    "PriceOracle": {
+      "address": "0xdeae17840f1111d032f16a6dec4126bd22b03af8"
+    },
+    "Vault": {
+      "address": "0x17a11c0da8951765effd58fa236053c14f779d03"
+    },
+    "InterestRateModel": {
+      "address": "0x48205953f4ef7b432d0a4f3d0880b21a9bc97a44"
+    },
+    "MarketTimelock": {
+      "address": "0xc3a57b3b0df30312ce7b1db08b652c6216e22ac0"
+    }
+  }
+}

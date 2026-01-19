@@ -1,11 +1,12 @@
 # 🏦 DeFi Lending Platform V2
 
-A comprehensive, production-ready decentralized lending protocol built with Solidity 0.8.30 and Foundry. Supports multi-collateral borrowing with dynamic interest rates, health factor-based liquidations, and ERC-4626 vault integration.
+A comprehensive, production-ready decentralized lending protocol built with Solidity 0.8.30 and Foundry. Features **UUPS upgradeable contracts**, **multi-sig governance with Timelock**, multi-collateral borrowing with dynamic interest rates, health factor-based liquidations, and ERC-4626 vault integration.
 
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.30-blue)](https://soliditylang.org/)
 [![Foundry](https://img.shields.io/badge/Foundry-Latest-orange)](https://book.getfoundry.sh/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-58%20Passing-brightgreen)](test/)
+[![Tests](https://img.shields.io/badge/Tests-91%20Passing-brightgreen)](test/)
+[![Upgradeable](https://img.shields.io/badge/UUPS-Upgradeable-purple)](https://docs.openzeppelin.com/contracts/5.x/api/proxy)
 
 ---
 
@@ -37,18 +38,26 @@ A comprehensive, production-ready decentralized lending protocol built with Soli
 - **ERC-4626 Vaults**: Standard-compliant yield-bearing vault tokens
 - **Decimal Normalization**: Seamless support for 6, 8, and 18 decimal tokens
 
+### Upgradeability & Governance
+
+- **UUPS Proxy Pattern**: Market contract is upgradeable via OpenZeppelin's UUPS pattern
+- **TimelockController**: All upgrades require a 2-day delay for community review
+- **Emergency Guardian**: Designated address can pause borrowing instantly (no timelock)
+- **Multi-sig Ready**: Designed for Gnosis Safe multisig ownership
+- **Storage Gaps**: 49-slot storage gap for safe future upgrades
+
 ### Advanced Features
 
 - **Strategy Integration**: Deployable yield strategies for idle capital optimization
 - **Bad Debt Management**: Systematic tracking and handling of underwater positions
 - **Protocol Fees**: 10% of interest revenue to protocol treasury
-- **Pause Controls**: Emergency pause for individual collateral types
+- **Borrow-Only Pause**: Emergency pause affects borrowing only; deposits, withdrawals, repayments, and liquidations remain functional
 - **Price Oracle Integration**: Chainlink-compatible price feeds with staleness checks
 - **Precision Accounting**: 18-decimal internal accounting prevents cumulative rounding errors
 
 ### Developer Experience
 
-- **Comprehensive Tests**: 58 unit, integration, and scenario tests with 100% core coverage
+- **Comprehensive Tests**: 91 unit, integration, governance, and upgrade simulation tests
 - **Gas Optimized**: Efficient storage patterns and minimal external calls (~140k gas per operation)
 - **Detailed Events**: Complete event coverage for off-chain indexing and monitoring
 - **Custom Errors**: Gas-efficient error handling with descriptive messages
@@ -101,9 +110,28 @@ _Coming soon after security audit_
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                      Market Contract                         │
-│  • Collateral Management  • Borrowing  • Repayment          │
-│  • Liquidations          • Health Checks                     │
+│                     Governance Layer                         │
+│  ┌─────────────────┐  ┌─────────────────┐                   │
+│  │   Multisig      │  │    Guardian     │                   │
+│  │  (Proposer/     │  │  (Emergency     │                   │
+│  │   Executor)     │  │   Pause Only)   │                   │
+│  └────────┬────────┘  └────────┬────────┘                   │
+│           │                    │                             │
+│           ▼                    │                             │
+│  ┌─────────────────┐          │                             │
+│  │  Timelock       │          │                             │
+│  │  (2-day delay)  │◄─────────┘ (no delay for pause)        │
+│  └────────┬────────┘                                        │
+└───────────┼─────────────────────────────────────────────────┘
+            │
+            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     ERC1967 Proxy                            │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │                 MarketV1 (UUPS)                        │  │
+│  │  • Collateral Management  • Borrowing  • Repayment    │  │
+│  │  • Liquidations  • Health Checks  • Emergency Pause   │  │
+│  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
          │              │              │              │
          ▼              ▼              ▼              ▼
@@ -117,10 +145,21 @@ _Coming soon after security audit_
 
 | Contract              | Purpose                                                    | Lines  | Test Coverage |
 | --------------------- | ---------------------------------------------------------- | ------ | ------------- |
-| **Market**            | Core lending logic, collateral management, liquidations    | ~1,130 | 24 tests      |
-| **Vault**             | ERC-4626 vault, liquidity management, strategy integration | ~470   | 26 tests      |
+| **MarketV1**          | UUPS upgradeable core lending logic with governance        | ~1,050 | 44 tests      |
+| **Vault**             | ERC-4626 vault, liquidity management, strategy integration | ~470   | 23 tests      |
 | **PriceOracle**       | Chainlink price feeds, staleness checks, decimal handling  | ~260   | Covered       |
 | **InterestRateModel** | Jump rate model, dynamic interest calculation              | ~310   | Covered       |
+| **MarketTimelock**    | TimelockController for delayed governance actions          | ~20    | 12 tests      |
+| **MarketStorageV1**   | Separated storage layout for upgrade safety                | ~140   | Covered       |
+
+### Governance Architecture
+
+| Role       | Capabilities                                          | Delay     |
+| ---------- | ----------------------------------------------------- | --------- |
+| **Owner**  | Upgrade contract, set parameters, add collateral      | 2 days    |
+| **Guardian** | Pause borrowing only (emergency)                    | Instant   |
+| **Timelock** | Holds ownership, enforces delay on all owner actions | 2 days    |
+| **Multisig** | Proposes and executes timelock operations           | -         |
 
 ### Data Flow Diagrams
 
@@ -165,25 +204,54 @@ _Coming soon after security audit_
 
 ### Core Contracts
 
-#### Market.sol
+#### MarketV1.sol (Upgradeable)
 
-**Purpose**: Core lending market contract  
+**Purpose**: UUPS upgradeable core lending market with governance
 **Key Functions**:
 
+- `initialize(...)` - One-time initialization (replaces constructor)
 - `depositCollateral(token, amount)` - Deposit collateral tokens
 - `withdrawCollateral(token, amount)` - Withdraw collateral (if healthy)
 - `borrow(amount)` - Borrow loan assets against collateral
 - `repay(amount)` - Repay borrowed amount with interest
 - `liquidate(borrower)` - Liquidate unhealthy positions
 - `getRepayAmount(borrower)` - Calculate exact repayment amount (handles rounding)
+- `setBorrowingPaused(bool)` - Emergency pause (owner or guardian)
+- `setGuardian(address)` - Set emergency guardian (owner only)
+- `upgradeToAndCall(newImpl, data)` - Upgrade to new implementation (owner only)
 
 **Key Features**:
 
+- **UUPS Proxy Pattern**: Upgradeable via OpenZeppelin's ERC1967 proxy
+- **Emergency Pause**: Guardian can pause borrowing instantly; other operations remain functional
+- **Governance Integration**: Owner is TimelockController for delayed upgrades
 - Multi-collateral support with individual pause controls
 - Decimal normalization for 6, 8, and 18 decimal tokens
 - Health factor calculation with liquidation penalty buffer (85% LLTV + 5% buffer)
 - Bad debt tracking and management
 - Global borrow index for compounding interest accrual
+
+#### MarketStorageV1.sol
+
+**Purpose**: Separated storage layout for upgrade-safe state management
+**Storage Layout**:
+
+```
+Slot 0:     owner
+Slot 1:     protocolTreasury
+Slot 2:     badDebtAddress
+Slot 3:     vaultContract
+Slot 4:     priceOracle
+Slot 5:     interestRateModel
+Slot 6:     loanAsset
+Slot 7-9:   marketParams (3 uint256s)
+Slot 10:    totalBorrows
+Slot 11:    globalBorrowIndex
+Slot 12:    lastAccrualTimestamp
+Slot 13:    paused + guardian (packed)
+Slot 14-21: mappings
+Slot 22-70: __gap (49 slots reserved for upgrades)
+```
 
 #### Vault.sol
 
@@ -281,13 +349,17 @@ forge test --gas-report
 ### Project Structure
 
 ```
-defi-lending-platform/
+lending-platform-v2/
 ├── src/
 │   ├── core/
-│   │   ├── Market.sol              # Core lending market
+│   │   ├── MarketV1.sol            # UUPS upgradeable lending market
+│   │   ├── MarketStorageV1.sol     # Separated storage layout
+│   │   ├── Market.sol              # Non-upgradeable version (legacy)
 │   │   ├── Vault.sol               # ERC-4626 vault
 │   │   ├── PriceOracle.sol         # Chainlink integration
 │   │   └── InterestRateModel.sol   # Jump rate model
+│   ├── governance/
+│   │   └── GovernanceSetup.sol     # Timelock & Guardian contracts
 │   ├── libraries/
 │   │   ├── DataTypes.sol           # Struct definitions
 │   │   ├── Events.sol              # Event definitions
@@ -300,13 +372,17 @@ defi-lending-platform/
 ├── test/
 │   ├── Mocks.sol                   # Shared mock contracts
 │   ├── unit/
-│   │   ├── MarketTest.t.sol        # Market unit tests
-│   │   ├── VaultTest.t.sol         # Vault unit tests
-│   │   └── DiagnosticTest.t.sol    # Setup verification
+│   │   ├── MarketTest.t.sol        # Market unit tests (24 tests)
+│   │   ├── MarketV1Test.t.sol      # Proxy & upgrade tests (20 tests)
+│   │   ├── VaultTest.t.sol         # Vault unit tests (23 tests)
+│   │   └── GovernanceTest.t.sol    # Timelock & guardian tests (12 tests)
 │   └── integration/
-│       └── IntegrationTest.t.sol   # E2E scenarios
+│       ├── IntegrationTest.t.sol   # E2E scenarios (7 tests)
+│       └── UpgradeSimulationTest.t.sol # Upgrade simulation (5 tests)
 ├── script/
-│   └── Deploy.s.sol                # Deployment script
+│   ├── Deploy.s.sol                # Non-upgradeable deployment
+│   ├── DeployUpgradeable.s.sol     # Upgradeable deployment + governance
+│   └── DeployUpgradeableMarket.s.sol # Full stack deployment
 ├── foundry.toml                    # Foundry configuration
 └── README.md                       # This file
 ```
@@ -317,13 +393,15 @@ defi-lending-platform/
 
 ### Test Suite Overview
 
-| Test File                 | Tests  | Focus                       | Lines      |
-| ------------------------- | ------ | --------------------------- | ---------- |
-| **MarketTest.t.sol**      | 24     | Market core functionality   | ~640       |
-| **VaultTest.t.sol**       | 26     | Vault & ERC-4626 compliance | ~470       |
-| **IntegrationTest.t.sol** | 7      | End-to-end scenarios        | ~570       |
-| **DiagnosticTest.t.sol**  | 1      | Setup verification          | ~100       |
-| **Total**                 | **58** | **Complete coverage**       | **~1,780** |
+| Test File                      | Tests  | Focus                              |
+| ------------------------------ | ------ | ---------------------------------- |
+| **MarketTest.t.sol**           | 24     | Core lending functionality         |
+| **MarketV1Test.t.sol**         | 20     | Proxy, initialization, upgrades    |
+| **VaultTest.t.sol**            | 23     | Vault & ERC-4626 compliance        |
+| **GovernanceTest.t.sol**       | 12     | Timelock & guardian functionality  |
+| **IntegrationTest.t.sol**      | 7      | End-to-end scenarios               |
+| **UpgradeSimulationTest.t.sol**| 5      | Upgrade with active positions      |
+| **Total**                      | **91** | **Complete coverage**              |
 
 ### Running Tests
 
@@ -422,68 +500,130 @@ forge coverage
 6. **Bad Debt Scenario**: Underwater position handling
 7. **Strategy Migration**: Live migration with active borrows
 
+#### Upgrade & Governance Tests (37 tests)
+
+✅ Proxy & Initialization (MarketV1Test)
+- Proxy delegates to implementation
+- Cannot initialize twice
+- Implementation cannot be initialized directly
+- Only owner can upgrade
+
+✅ Emergency Pause (MarketV1Test)
+- Guardian can pause borrowing
+- Pause allows deposits, withdrawals, repayments, liquidations
+- Non-guardian cannot pause
+
+✅ Timelock & Guardian (GovernanceTest)
+- Timelock enforces 2-day delay
+- Guardian can pause without delay
+- Full governance flow (schedule → wait → execute)
+- Timelock can perform upgrades
+
+✅ Upgrade Simulation (UpgradeSimulationTest)
+- Upgrade preserves user positions
+- Upgrade during pause preserves pause state
+- Liquidation works after upgrade
+- Multiple sequential upgrades maintain state
+- Storage layout verification
+
 ---
 
 ## 🚀 Deployment
 
-### Deployment Order
+### Upgradeable Deployment (Recommended)
 
-1. Deploy MockERC20 tokens (or use real tokens)
-2. Deploy MockPriceFeed (or use Chainlink feeds)
-3. Deploy Strategy (ERC-4626 yield strategy)
-4. Deploy PriceOracle with deployer as owner
-5. Deploy Vault with Strategy
-6. Deploy InterestRateModel with Vault
-7. Deploy Market with all dependencies
-8. Link contracts:
-   ```solidity
-   vault.setMarket(address(market));
-   irm.setMarketContract(address(market));
-   oracle.transferOwnership(address(market));
-   ```
-9. Configure Market:
-   ```solidity
-   market.setMarketParameters(0.85e18, 0.05e18, 0.10e18);
-   market.addCollateralToken(weth, wethFeed);
-   market.addCollateralToken(wbtc, wbtcFeed);
-   ```
-10. Fund Vault with initial liquidity
+The upgradeable deployment uses UUPS proxy pattern with TimelockController governance.
 
-### Deployment Script
+#### Deployment Order
+
+1. Deploy PriceOracle
+2. Deploy Vault (ERC-4626)
+3. Deploy InterestRateModel
+4. Deploy MarketV1 Implementation
+5. Deploy ERC1967Proxy with initialization data
+6. Link contracts (Vault ↔ Market, IRM ↔ Market)
+7. Add price feeds and collateral tokens
+8. Deploy TimelockController
+9. Set Guardian address
+10. Transfer ownership to Timelock
+
+#### Deployment Script
 
 ```bash
-# Local (Anvil)
-anvil  # Start local node
-forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast
+# Set up environment variables in .env:
+# PRIVATE_KEY, SEPOLIA_RPC_URL, ETHERSCAN_API_KEY
+# LOAN_ASSET_ADDRESS, PROTOCOL_TREASURY, BAD_DEBT_ADDRESS
+# STRATEGY_ADDRESS, GUARDIAN_ADDRESS, MULTISIG_ADDRESS
+# WETH_ADDRESS, WETH_FEED, WBTC_ADDRESS, WBTC_FEED, LOAN_ASSET_FEED
 
-# Sepolia Testnet
-forge script script/Deploy.s.sol \
+# Deploy upgradeable Market with governance
+forge script script/DeployUpgradeableMarket.s.sol:DeployUpgradeableMarket \
   --rpc-url $SEPOLIA_RPC_URL \
-  --private-key $PRIVATE_KEY \
-  --broadcast \
-  --verify \
-  --etherscan-api-key $ETHERSCAN_API_KEY
-
-# Mainnet
-forge script script/Deploy.s.sol \
-  --rpc-url $MAINNET_RPC_URL \
-  --private-key $PRIVATE_KEY \
   --broadcast \
   --verify \
   --etherscan-api-key $ETHERSCAN_API_KEY
 ```
 
+### Performing an Upgrade
+
+```solidity
+// 1. Deploy new implementation
+MarketV2 newImpl = new MarketV2();
+
+// 2. Schedule upgrade through Timelock (as multisig)
+bytes memory upgradeData = abi.encodeWithSelector(
+    UUPSUpgradeable.upgradeToAndCall.selector,
+    address(newImpl),
+    "" // or initialization data for V2
+);
+timelock.schedule(
+    address(marketProxy),
+    0,
+    upgradeData,
+    bytes32(0),
+    keccak256("upgrade-v2"),
+    2 days
+);
+
+// 3. Wait 2 days...
+
+// 4. Execute upgrade (as multisig)
+timelock.execute(
+    address(marketProxy),
+    0,
+    upgradeData,
+    bytes32(0),
+    keccak256("upgrade-v2")
+);
+```
+
+### Emergency Pause (No Timelock Needed)
+
+```solidity
+// Guardian can pause borrowing instantly
+market.setBorrowingPaused(true);
+
+// Users can still:
+// - Deposit collateral
+// - Withdraw collateral
+// - Repay debt
+// - Get liquidated
+
+// Unpause requires owner (through timelock) or guardian
+market.setBorrowingPaused(false);
+```
+
 ### Post-Deployment Checklist
 
 - [ ] Verify all contracts on Etherscan
-- [ ] Transfer oracle ownership to Market
-- [ ] Configure market parameters (LLTV = 85%, penalty = 5%, fee = 10%)
-- [ ] Add all collateral tokens with Chainlink price feeds
-- [ ] Fund vault with initial liquidity (e.g., 100,000 USDC)
-- [ ] Test deposit/borrow/repay on testnet
+- [ ] Verify proxy points to correct implementation
+- [ ] Test basic operations (deposit, borrow, repay)
+- [ ] Verify Timelock owns Market
+- [ ] Verify Guardian can pause
+- [ ] Test upgrade flow on testnet
 - [ ] Set up monitoring and alerts
-- [ ] Conduct security audit
-- [ ] Transfer admin roles to multisig
+- [ ] Configure multisig with appropriate signers
+- [ ] Document upgrade procedures for team
 
 ---
 
@@ -563,15 +703,17 @@ if (!isHealthy) {
 ### Security Features
 
 1. **ReentrancyGuard**: All state-changing functions protected against reentrancy
-2. **Access Control**: Strict role-based permissions (owner, market, liquidator)
-3. **Pausable**: Emergency pause capability for individual collateral types
-4. **Price Validation**: Staleness checks prevent stale price exploitation
-5. **Decimal Safety**: Comprehensive normalization prevents overflow/underflow
-6. **Health Factor Buffer**: 5% liquidation penalty creates safety margin before bad debt
-7. **Bad Debt Isolation**: Underwater positions tracked separately, don't affect others
-8. **Oracle Ownership**: Market controls oracle to prevent price manipulation
-9. **Vault Approval**: Market pre-approves Vault for seamless repayments
-10. **Custom Errors**: Gas-efficient, descriptive error messages
+2. **UUPS Proxy**: Upgrade authorization in implementation prevents unauthorized upgrades
+3. **TimelockController**: 2-day delay on all governance actions allows community review
+4. **Emergency Guardian**: Can pause borrowing instantly without timelock delay
+5. **Borrow-Only Pause**: Pause only affects borrowing; users can always repay/withdraw
+6. **Storage Gaps**: 49-slot gap prevents storage collisions during upgrades
+7. **Price Validation**: Staleness checks prevent stale price exploitation
+8. **Decimal Safety**: Comprehensive normalization prevents overflow/underflow
+9. **Health Factor Buffer**: 5% liquidation penalty creates safety margin before bad debt
+10. **Bad Debt Isolation**: Underwater positions tracked separately, don't affect others
+11. **Oracle Ownership**: Market controls oracle to prevent price manipulation
+12. **Custom Errors**: Gas-efficient, descriptive error messages
 
 ### Security Best Practices Implemented
 
@@ -721,7 +863,7 @@ This project is licensed under the MIT License.
 
 ## 🙏 Acknowledgments
 
-- **OpenZeppelin**: Security libraries and standards
+- **OpenZeppelin**: Security libraries, UUPS proxy pattern, and TimelockController
 - **Foundry**: Development framework
 - **Chainlink**: Decentralized oracle network
 - **Compound Finance**: Interest rate model inspiration

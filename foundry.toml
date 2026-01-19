@@ -6,7 +6,8 @@ test = "test"
 cache_path = "cache"
 eth_rpc_url = "https://eth-sepolia.g.alchemy.com/v2/rBgXMI1K1DTe3cHIew_X3VV1EcpMlzsp"
 remappings = [
-    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
     "@chainlink/=lib/chainlink-brownie-contracts/",
 ]
 

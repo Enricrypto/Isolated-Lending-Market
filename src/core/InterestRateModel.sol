@@ -6,6 +6,7 @@ import "./Market.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title InterestRateModel

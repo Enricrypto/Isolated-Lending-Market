@@ -3,8 +3,10 @@ pragma solidity ^0.8.30;
 
 import "@openzeppelin/contracts/interfaces/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "./Vault.sol";
 import "./PriceOracle.sol";
 import "./InterestRateModel.sol";
@@ -14,12 +16,13 @@ import "../libraries/Events.sol";
 import "../libraries/DataTypes.sol";
 
 /**
- * @title Market
- * @notice Core lending market contract supporting multi-collateral borrowing
- * @dev Implements interest accrual, health factor management, and liquidations
+ * @title MarketV1
+ * @notice Upgradeable core lending market contract supporting multi-collateral borrowing
+ * @dev Implements UUPS proxy pattern for upgradeability
  * @author Your Team
  *
  * Key Features:
+ * - UUPS upgradeable proxy pattern
  * - Multi-collateral support with individual pause controls
  * - Dynamic interest rates via InterestRateModel
  * - Health factor-based liquidations
@@ -36,8 +39,18 @@ import "../libraries/DataTypes.sol";
  * Storage:
  * - Inherits from MarketStorageV1 for upgrade-safe storage layout
  * - All state variables are defined in MarketStorageV1
+ *
+ * Upgrade Safety:
+ * - Only owner can authorize upgrades
+ * - Storage layout preserved via MarketStorageV1 inheritance
+ * - Future upgrades must maintain storage compatibility
  */
-contract Market is MarketStorageV1, ReentrancyGuard {
+contract MarketV1 is
+    Initializable,
+    MarketStorageV1,
+    ReentrancyGuard,
+    UUPSUpgradeable
+{
     using Math for uint256;
 
     // ==================== CONSTANTS ====================
@@ -49,31 +62,44 @@ contract Market is MarketStorageV1, ReentrancyGuard {
 
     // ==================== CONSTRUCTOR ====================
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    // ==================== INITIALIZER ====================
+
     /**
-     * @notice Initialize the Market contract
+     * @notice Initialize the Market contract (replaces constructor for proxy)
      * @param _badDebtAddress Address to accumulate bad debt
      * @param _protocolTreasury Address to receive protocol fees
      * @param _vaultContract Vault contract address
      * @param _priceOracle Price oracle address
      * @param _interestRateModel Interest rate model address
      * @param _loanAsset Loan asset address (e.g., USDC)
-     * @dev In Phase 0, we use constructor initialization.
-     *      Phase 1 will convert this to an initializer pattern for UUPS proxy.
+     * @param _owner Initial owner address
+     * @dev Can only be called once due to initializer modifier
      */
-    constructor(
+    function initialize(
         address _badDebtAddress,
         address _protocolTreasury,
         address _vaultContract,
         address _priceOracle,
         address _interestRateModel,
-        address _loanAsset
-    ) {
+        address _loanAsset,
+        address _owner
+    ) external initializer {
+        // Validate inputs
         if (_badDebtAddress == address(0)) revert Errors.InvalidBadDebtAddress();
         if (_protocolTreasury == address(0)) revert Errors.InvalidTreasuryAddress();
         if (_vaultContract == address(0)) revert Errors.ZeroAddress();
         if (_priceOracle == address(0)) revert Errors.ZeroAddress();
         if (_interestRateModel == address(0)) revert Errors.ZeroAddress();
         if (_loanAsset == address(0)) revert Errors.InvalidTokenAddress();
+        if (_owner == address(0)) revert Errors.ZeroAddress();
+
+        // Note: In OZ v5, ReentrancyGuard uses transient storage and
+        // UUPSUpgradeable doesn't require initialization
 
         // Initialize storage variables (inherited from MarketStorageV1)
         badDebtAddress = _badDebtAddress;
@@ -82,7 +108,7 @@ contract Market is MarketStorageV1, ReentrancyGuard {
         priceOracle = PriceOracle(_priceOracle);
         interestRateModel = InterestRateModel(_interestRateModel);
         loanAsset = IERC20(_loanAsset);
-        owner = msg.sender;
+        owner = _owner;
 
         // Initialize borrow index to PRECISION (1e18)
         globalBorrowIndex = PRECISION;
@@ -98,8 +124,19 @@ contract Market is MarketStorageV1, ReentrancyGuard {
         _;
     }
 
-    modifier whenNotPaused() {
-        if (paused) revert Errors.SystemAddressRestricted();
+    modifier onlyOwnerOrGuardian() {
+        if (msg.sender != owner && msg.sender != guardian) revert Errors.OnlyOwner();
+        _;
+    }
+
+    /**
+     * @notice Modifier to prevent borrowing when paused
+     * @dev Only blocks leverage-increasing actions (borrow)
+     *      Allows: deposits, withdrawals, repayments, liquidations
+     *      This ensures users are NEVER trapped
+     */
+    modifier whenBorrowingNotPaused() {
+        if (paused) revert Errors.BorrowingPaused();
         _;
     }
 
@@ -108,6 +145,29 @@ contract Market is MarketStorageV1, ReentrancyGuard {
             revert Errors.SystemAddressRestricted();
         }
         _;
+    }
+
+    // ==================== UUPS UPGRADE AUTHORIZATION ====================
+
+    /**
+     * @notice Authorize an upgrade to a new implementation
+     * @param newImplementation Address of new implementation contract
+     * @dev Only owner can authorize upgrades
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    // ==================== OWNERSHIP ====================
+
+    /**
+     * @notice Transfer ownership to a new address
+     * @param newOwner Address of new owner
+     * @dev Used to transfer ownership to Timelock in governance setup
+     */
+    function transferOwnership(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert Errors.ZeroAddress();
+        address oldOwner = owner;
+        owner = newOwner;
+        emit Events.OwnershipTransferred(oldOwner, newOwner);
     }
 
     // ==================== ADMIN FUNCTIONS ====================
@@ -130,7 +190,9 @@ contract Market is MarketStorageV1, ReentrancyGuard {
         if (_protocolFeeRate > PRECISION) revert Errors.ParameterTooHigh();
 
         marketParams = DataTypes.MarketParameters({
-            lltv: _lltv, liquidationPenalty: _liquidationPenalty, protocolFeeRate: _protocolFeeRate
+            lltv: _lltv,
+            liquidationPenalty: _liquidationPenalty,
+            protocolFeeRate: _protocolFeeRate
         });
 
         emit Events.MarketParametersUpdated(_lltv, _liquidationPenalty, _protocolFeeRate);
@@ -202,11 +264,27 @@ contract Market is MarketStorageV1, ReentrancyGuard {
     }
 
     /**
-     * @notice Emergency pause all market operations
-     * @dev Only owner can pause/unpause
+     * @notice Emergency pause/unpause borrowing
+     * @param _paused True to pause borrowing, false to resume
+     * @dev When paused:
+     *      - Borrowing is blocked
+     *      - Deposits, withdrawals, repayments, and liquidations are ALLOWED
+     *      - Users can always exit their positions
      */
-    function setPaused(bool _paused) external onlyOwner {
+    function setBorrowingPaused(bool _paused) external onlyOwnerOrGuardian {
         paused = _paused;
+        emit Events.BorrowingPausedChanged(_paused);
+    }
+
+    /**
+     * @notice Set the guardian address
+     * @param _guardian New guardian address (or address(0) to disable)
+     * @dev Guardian can only pause, not unpause or perform other actions
+     */
+    function setGuardian(address _guardian) external onlyOwner {
+        address oldGuardian = guardian;
+        guardian = _guardian;
+        emit Events.GuardianChanged(oldGuardian, _guardian);
     }
 
     // ==================== COLLATERAL MANAGEMENT ====================
@@ -216,12 +294,10 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      * @param token Collateral token address
      * @param amount Amount in token's native decimals
      */
-    function depositCollateral(address token, uint256 amount)
-        external
-        nonReentrant
-        whenNotPaused
-        notSystemAddress
-    {
+    function depositCollateral(
+        address token,
+        uint256 amount
+    ) external nonReentrant notSystemAddress {
         _updateGlobalBorrowIndex();
 
         if (!supportedCollateralTokens[token]) revert Errors.TokenNotSupported();
@@ -257,12 +333,10 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      * @param token Collateral token address
      * @param rawAmount Amount in token's native decimals
      */
-    function withdrawCollateral(address token, uint256 rawAmount)
-        external
-        nonReentrant
-        whenNotPaused
-        notSystemAddress
-    {
+    function withdrawCollateral(
+        address token,
+        uint256 rawAmount
+    ) external nonReentrant notSystemAddress {
         _updateGlobalBorrowIndex();
 
         if (!supportedCollateralTokens[token]) revert Errors.TokenNotSupported();
@@ -312,17 +386,13 @@ contract Market is MarketStorageV1, ReentrancyGuard {
         emit Events.CollateralWithdrawn(msg.sender, token, normalizedAmount);
     }
 
-    // TO BE CONTINUED IN PART 2...
-
-    // This continues from Part 1
-
     // ==================== BORROWING OPERATIONS ====================
 
     /**
      * @notice Borrow loan assets against deposited collateral
      * @param amount Amount to borrow in loan asset's native decimals
      */
-    function borrow(uint256 amount) external nonReentrant whenNotPaused notSystemAddress {
+    function borrow(uint256 amount) external nonReentrant whenBorrowingNotPaused notSystemAddress {
         _updateGlobalBorrowIndex();
 
         if (amount == 0) revert Errors.InvalidAmount();
@@ -367,7 +437,7 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      * @notice Repay borrowed loan assets
      * @param amount Amount to repay in loan asset's native decimals
      */
-    function repay(uint256 amount) external nonReentrant whenNotPaused notSystemAddress {
+    function repay(uint256 amount) external nonReentrant notSystemAddress {
         _updateGlobalBorrowIndex();
 
         if (amount == 0) revert Errors.InvalidAmount();
@@ -383,7 +453,7 @@ contract Market is MarketStorageV1, ReentrancyGuard {
         if (normalizedAmount < interest) revert Errors.MustCoverInterest();
 
         // Cannot repay more than debt (allow tiny overpayment for rounding)
-        uint256 maxOverpayment = 10 ** (TARGET_DECIMALS - loanDecimals); // 1 unit in loan decimals = 1e12 for 6 decimal tokens
+        uint256 maxOverpayment = 10 ** (TARGET_DECIMALS - loanDecimals);
         if (normalizedAmount > totalDebt + maxOverpayment) revert Errors.RepaymentExceedsDebt();
 
         // Calculate protocol fee on interest
@@ -393,7 +463,7 @@ contract Market is MarketStorageV1, ReentrancyGuard {
         // Calculate principal repayment (cap at actual debt)
         uint256 principal = normalizedAmount > interest ? normalizedAmount - interest : 0;
         if (principal > userTotalDebt[msg.sender]) {
-            principal = userTotalDebt[msg.sender]; // Cap to prevent underflow
+            principal = userTotalDebt[msg.sender];
         }
 
         // Total going to vault = principal + interest (minus protocol fee)
@@ -404,8 +474,10 @@ contract Market is MarketStorageV1, ReentrancyGuard {
         if (!transferSuccess) revert Errors.TransferFailed();
 
         // Send protocol fee to treasury
-        bool feeSuccess =
-            loanAsset.transfer(protocolTreasury, _denormalizeAmount(protocolFee, loanDecimals));
+        bool feeSuccess = loanAsset.transfer(
+            protocolTreasury,
+            _denormalizeAmount(protocolFee, loanDecimals)
+        );
         if (!feeSuccess) revert Errors.TransferFailed();
 
         // Repay to vault
@@ -430,7 +502,7 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      * @param borrower Address of borrower to liquidate
      * @dev Liquidator must approve this contract to spend loan tokens
      */
-    function liquidate(address borrower) external nonReentrant whenNotPaused notSystemAddress {
+    function liquidate(address borrower) external nonReentrant notSystemAddress {
         _updateGlobalBorrowIndex();
 
         // Calculate liquidation amounts
@@ -455,10 +527,9 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      * @return collateralToSeize Collateral to seize in USD (18 decimals)
      * @return badDebt Bad debt amount in USD (18 decimals)
      */
-    function _calculateLiquidation(address borrower)
-        internal
-        returns (uint256 debtToCover, uint256 collateralToSeize, uint256 badDebt)
-    {
+    function _calculateLiquidation(
+        address borrower
+    ) internal returns (uint256 debtToCover, uint256 collateralToSeize, uint256 badDebt) {
         if (_isHealthy(borrower)) revert Errors.PositionIsHealthy();
 
         uint256 currentDebt = _getUserTotalDebt(borrower);
@@ -488,14 +559,18 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      * @param liquidator Address of liquidator
      * @param debtToCover Amount of debt to cover in USD (18 decimals)
      */
-    function _processLiquidatorRepayment(address borrower, address liquidator, uint256 debtToCover)
-        internal
-    {
+    function _processLiquidatorRepayment(
+        address borrower,
+        address liquidator,
+        uint256 debtToCover
+    ) internal {
         uint8 loanDecimals = _getLoanAssetDecimals();
 
         // Transfer repayment from liquidator
         bool transferSuccess = loanAsset.transferFrom(
-            liquidator, address(this), _denormalizeAmount(debtToCover, loanDecimals)
+            liquidator,
+            address(this),
+            _denormalizeAmount(debtToCover, loanDecimals)
         );
         if (!transferSuccess) revert Errors.TransferFailed();
 
@@ -516,8 +591,9 @@ contract Market is MarketStorageV1, ReentrancyGuard {
         vaultContract.adminRepay(_denormalizeAmount(netRepayToVault, loanDecimals));
 
         // Calculate principal repayment
-        uint256 principalRepayment =
-            debtToCover > interestAccrued ? debtToCover - interestAccrued : 0;
+        uint256 principalRepayment = debtToCover > interestAccrued
+            ? debtToCover - interestAccrued
+            : 0;
 
         // Cap principal at user's actual debt
         if (principalRepayment > userTotalDebt[borrower]) {
@@ -537,10 +613,11 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      * @param collateralToSeizeUsd USD value to seize (18 decimals)
      * @return totalSeized Total USD value actually seized
      */
-    function _seizeCollateral(address borrower, address liquidator, uint256 collateralToSeizeUsd)
-        internal
-        returns (uint256 totalSeized)
-    {
+    function _seizeCollateral(
+        address borrower,
+        address liquidator,
+        uint256 collateralToSeizeUsd
+    ) internal returns (uint256 totalSeized) {
         address[] memory collateralTokens = userCollateralAssets[borrower];
         uint256 remainingToSeize = collateralToSeizeUsd;
 
@@ -630,10 +707,6 @@ contract Market is MarketStorageV1, ReentrancyGuard {
         emit Events.BadDebtRecorded(borrower, badDebtAmount);
     }
 
-    // TO BE CONTINUED IN PART 3 (View functions, helpers, utilities)...
-
-    // This continues from Part 2 and completes the contract
-
     // ==================== VIEW FUNCTIONS ====================
 
     /**
@@ -698,11 +771,9 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      * @param user Address of user
      * @return position User's position data
      */
-    function getUserPosition(address user)
-        external
-        view
-        returns (DataTypes.UserPosition memory position)
-    {
+    function getUserPosition(
+        address user
+    ) external view returns (DataTypes.UserPosition memory position) {
         position.collateralValue = _getUserTotalCollateralValue(user);
         position.totalDebt = _getUserTotalDebt(user);
         position.healthFactor = _calculateHealthFactor(user);
@@ -787,9 +858,8 @@ contract Market is MarketStorageV1, ReentrancyGuard {
 
         // Calculate effective borrowed amount including liquidation penalty
         // This creates a safety buffer before actual liquidation
-        uint256 effectiveBorrowedAmount = Math.mulDiv(
-            borrowedAmountUsd, PRECISION + marketParams.liquidationPenalty, PRECISION
-        );
+        uint256 effectiveBorrowedAmount =
+            Math.mulDiv(borrowedAmountUsd, PRECISION + marketParams.liquidationPenalty, PRECISION);
 
         // Health factor = (collateralValue * LLTV) / effectiveBorrowedAmount
         uint256 healthFactor =
@@ -805,16 +875,15 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      */
     function _calculateHealthFactor(address user) internal view returns (uint256) {
         uint256 totalDebt = _getUserTotalDebt(user);
-        if (totalDebt == 0) return type(uint256).max; // Infinite health if no debt
+        if (totalDebt == 0) return type(uint256).max;
 
         uint256 borrowedAmountUsd = _getLoanDebtInUSD(totalDebt);
         uint256 collateralValue = _getUserTotalCollateralValue(user);
 
         if (borrowedAmountUsd == 0) return type(uint256).max;
 
-        uint256 effectiveBorrowedAmount = Math.mulDiv(
-            borrowedAmountUsd, PRECISION + marketParams.liquidationPenalty, PRECISION
-        );
+        uint256 effectiveBorrowedAmount =
+            Math.mulDiv(borrowedAmountUsd, PRECISION + marketParams.liquidationPenalty, PRECISION);
 
         return Math.mulDiv(collateralValue, marketParams.lltv, effectiveBorrowedAmount);
     }
@@ -879,7 +948,7 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      * @return Value in USD (18 decimals)
      */
     function _getTokenValueInUSD(address token, uint256 amount) internal view returns (uint256) {
-        uint256 price = priceOracle.getLatestPrice(token); // Returns 18 decimals
+        uint256 price = priceOracle.getLatestPrice(token);
         return Math.mulDiv(amount, price, PRECISION);
     }
 
@@ -972,14 +1041,13 @@ contract Market is MarketStorageV1, ReentrancyGuard {
      * @return Denormalized amount (rounded up)
      * @dev Used when we need to ensure full payment (e.g., repayments)
      */
-    function _denormalizeAmountRoundUp(uint256 amount, uint8 decimals)
-        internal
-        pure
-        returns (uint256)
-    {
+    function _denormalizeAmountRoundUp(
+        uint256 amount,
+        uint8 decimals
+    ) internal pure returns (uint256) {
         if (decimals == TARGET_DECIMALS) return amount;
         uint256 divisor = 10 ** (TARGET_DECIMALS - decimals);
-        return Math.ceilDiv(amount, divisor); // Use OZ Math for ceiling division
+        return Math.ceilDiv(amount, divisor);
     }
 
     /**

@@ -58,6 +58,12 @@ library Events {
     /// @notice Emitted when the global borrow index is updated
     event GlobalBorrowIndexUpdated(uint256 oldIndex, uint256 newIndex, uint256 timestamp);
 
+    /// @notice Emitted when borrowing pause state changes
+    event BorrowingPausedChanged(bool paused);
+
+    /// @notice Emitted when guardian address is changed
+    event GuardianChanged(address indexed oldGuardian, address indexed newGuardian);
+
     // ==================== VAULT EVENTS ====================
 
     /// @notice Emitted when market is set on vault

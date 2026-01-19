@@ -14,6 +14,10 @@ library Errors {
     error OnlyMarketOwner();
     error SystemAddressRestricted();
 
+    // ==================== EMERGENCY CONTROLS ====================
+    /// @notice Borrowing is paused - deposits, withdrawals, repayments still allowed
+    error BorrowingPaused();
+
     // ==================== MARKET ERRORS ====================
     error TokenNotSupported();
     error TokenAlreadyAdded();

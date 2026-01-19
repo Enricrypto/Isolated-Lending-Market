@@ -69,22 +69,28 @@ A comprehensive, production-ready decentralized lending protocol built with Soli
 
 ## 🌐 Deployed Contracts
 
-### Sepolia Testnet
+### Sepolia Testnet (V1 - Upgradeable)
 
-The protocol is currently deployed and operational on Sepolia testnet:
+The protocol is currently deployed and operational on Sepolia testnet with **UUPS upgradeability** and **multi-sig governance**:
 
 **Core Contracts:**
 
-- **Market**: [`0xB44d...6daF`](https://sepolia.etherscan.io/address/0xB44dA96f11c429A89EA75BF820255d8698b86daF)
-- **Vault**: [`0x6104...D27F`](https://sepolia.etherscan.io/address/0x61048f410a148cfd999C078315e430925D45D27F)
-- **PriceOracle**: [`0x931C...Ce76`](https://sepolia.etherscan.io/address/0x931C0e524c51518fC0B46B0c941996f6E612Ce76)
-- **InterestRateModel**: [`0xaD00...D650`](https://sepolia.etherscan.io/address/0xaD00C98eEDfb769e1ae4c41c55a8B06178F2D650)
+| Contract | Address | Description |
+|----------|---------|-------------|
+| **MarketV1 (Proxy)** | [`0xbe4f...4bb6`](https://sepolia.etherscan.io/address/0xbe4fd219b17c3e55562c9bd9254bc3f3519d4bb6) | Main entry point for users |
+| **MarketV1 (Implementation)** | [`0x383b...8266`](https://sepolia.etherscan.io/address/0x383bbcd792d6c60f6b87ae7522cfccfac9b68266) | Logic contract |
+| **Vault** | [`0x17a1...9d03`](https://sepolia.etherscan.io/address/0x17a11c0da8951765effd58fa236053c14f779d03) | ERC-4626 liquidity vault |
+| **PriceOracle** | [`0xdeae...3af8`](https://sepolia.etherscan.io/address/0xdeae17840f1111d032f16a6dec4126bd22b03af8) | Chainlink price feeds |
+| **InterestRateModel** | [`0x4820...7a44`](https://sepolia.etherscan.io/address/0x48205953f4ef7b432d0a4f3d0880b21a9bc97a44) | Jump rate model |
+| **MarketTimelock** | [`0xc3a5...2ac0`](https://sepolia.etherscan.io/address/0xc3a57b3b0df30312ce7b1db08b652c6216e22ac0) | 2-day governance delay |
 
 **Test Assets:**
 
-- **USDC (Mock)**: `0x4949E3c0fBA71d2A0031D9a648A17632E65ae495`
-- **WETH (Mock)**: `0x4F61DeD7391d6F7EbEb8002481aFEc2ebd1D535c`
-- **WBTC (Mock)**: `0x773269dE75Ec35Bd786337407af9E725e0E32dD5`
+| Token | Address | Decimals |
+|-------|---------|----------|
+| **USDC (Mock)** | `0x4949E3c0fBA71d2A0031D9a648A17632E65ae495` | 6 |
+| **WETH (Mock)** | `0x4F61DeD7391d6F7EbEb8002481aFEc2ebd1D535c` | 18 |
+| **WBTC (Mock)** | `0x773269dE75Ec35Bd786337407af9E725e0E32dD5` | 8 |
 
 **Try it out:**
 
@@ -96,6 +102,80 @@ The protocol is currently deployed and operational on Sepolia testnet:
 ### Mainnet
 
 _Coming soon after security audit_
+
+---
+
+## 🎬 Protocol Demonstration (Sepolia)
+
+We provide **deterministic, reproducible scenarios** on Sepolia testnet that demonstrate the full protocol lifecycle. These scenarios run via GitHub Actions using a funded Sepolia wallet.
+
+### Available Scenarios
+
+| Scenario | Description | Key Operations |
+|----------|-------------|----------------|
+| **Happy Path** | Complete lending cycle | Deposit → Borrow → Repay → Withdraw |
+| **Liquidation** | Price crash triggers liquidation | Collateral deposit → Aggressive borrow → Price drop → Liquidation |
+| **Bad Debt** | Black swan event creates bad debt | Max borrow → 80% price crash → Partial recovery → Bad debt recorded |
+
+### Running Scenarios Locally
+
+```bash
+# Set environment variables
+export SEPOLIA_RPC_URL="https://sepolia.infura.io/v3/YOUR_KEY"
+export PRIVATE_KEY="0x..."  # Funded Sepolia wallet
+
+# Run Happy Path scenario
+forge script script/scenarios/Scenario_HappyPath.s.sol:Scenario_HappyPath \
+  --rpc-url $SEPOLIA_RPC_URL --broadcast -vvvv
+
+# Run Liquidation scenario
+forge script script/scenarios/Scenario_Liquidation.s.sol:Scenario_Liquidation \
+  --rpc-url $SEPOLIA_RPC_URL --broadcast -vvvv
+
+# Run Bad Debt scenario
+forge script script/scenarios/Scenario_BadDebt.s.sol:Scenario_BadDebt \
+  --rpc-url $SEPOLIA_RPC_URL --broadcast -vvvv
+```
+
+### Running via GitHub Actions
+
+1. Add secrets to your repository:
+   - `SEPOLIA_RPC_URL` - Your RPC endpoint (Alchemy/Infura/Ankr)
+   - `DEMO_PRIVATE_KEY` - Private key of funded testnet wallet
+
+2. Trigger workflow manually:
+   - Go to **Actions** → **Sepolia Protocol Scenarios**
+   - Click **Run workflow**
+   - Select scenario: `all`, `happy-path`, `liquidation`, or `bad-debt`
+
+### Scenario Details
+
+#### 1. Happy Path (`Scenario_HappyPath.s.sol`)
+Demonstrates a complete, successful lending cycle:
+- Lender deposits 100k USDC into Vault
+- Borrower deposits 10 WETH as collateral ($20,000 value)
+- Borrower takes 10k USDC loan
+- Borrower repays loan with interest
+- Borrower withdraws collateral
+- Lender redeems shares with earnings
+
+#### 2. Liquidation (`Scenario_Liquidation.s.sol`)
+Demonstrates liquidation mechanics when collateral value drops:
+- Borrower deposits 10 WETH collateral
+- Borrower takes aggressive 15k USDC loan
+- WETH price crashes 40% ($2,000 → $1,200)
+- Position becomes unhealthy (health factor < 1)
+- Liquidator seizes collateral with 5% bonus
+- Price restored for next scenario
+
+#### 3. Bad Debt (`Scenario_BadDebt.s.sol`)
+Demonstrates bad debt handling in extreme market conditions:
+- Borrower takes maximum capacity loan
+- Black swan event: WETH crashes 80% ($2,000 → $400)
+- Position becomes deeply underwater (debt > collateral)
+- Liquidation recovers partial debt
+- Bad debt is recorded and socialized
+- Demonstrates importance of conservative risk parameters
 
 ---
 
@@ -382,7 +462,11 @@ lending-platform-v2/
 ├── script/
 │   ├── Deploy.s.sol                # Non-upgradeable deployment
 │   ├── DeployUpgradeable.s.sol     # Upgradeable deployment + governance
-│   └── DeployUpgradeableMarket.s.sol # Full stack deployment
+│   ├── DeployUpgradeableMarket.s.sol # Full stack deployment
+│   └── scenarios/
+│       ├── Scenario_HappyPath.s.sol    # Full lending cycle demo
+│       ├── Scenario_Liquidation.s.sol  # Price crash liquidation
+│       └── Scenario_BadDebt.s.sol      # Black swan bad debt
 ├── foundry.toml                    # Foundry configuration
 └── README.md                       # This file
 ```

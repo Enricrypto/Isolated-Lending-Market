@@ -1,0 +1,81 @@
+name: Sepolia Protocol Scenarios
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Scenario to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - happy-path
+          - liquidation
+          - bad-debt
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  run-scenarios:
+    name: Run Protocol Scenarios on Sepolia
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Show Forge version
+        run: forge --version
+
+      - name: Build contracts
+        run: forge build
+
+      - name: Run Happy Path Scenario
+        if: ${{ github.event.inputs.scenario == 'all' || github.event.inputs.scenario == 'happy-path' }}
+        env:
+          SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+          PRIVATE_KEY: ${{ secrets.DEMO_PRIVATE_KEY }}
+        run: |
+          echo "Running Happy Path Scenario..."
+          forge script script/scenarios/Scenario_HappyPath.s.sol:Scenario_HappyPath \
+            --rpc-url $SEPOLIA_RPC_URL \
+            --broadcast \
+            -vvvv
+
+      - name: Run Liquidation Scenario
+        if: ${{ github.event.inputs.scenario == 'all' || github.event.inputs.scenario == 'liquidation' }}
+        env:
+          SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+          PRIVATE_KEY: ${{ secrets.DEMO_PRIVATE_KEY }}
+        run: |
+          echo "Running Liquidation Scenario..."
+          forge script script/scenarios/Scenario_Liquidation.s.sol:Scenario_Liquidation \
+            --rpc-url $SEPOLIA_RPC_URL \
+            --broadcast \
+            -vvvv
+
+      - name: Run Bad Debt Scenario
+        if: ${{ github.event.inputs.scenario == 'all' || github.event.inputs.scenario == 'bad-debt' }}
+        env:
+          SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+          PRIVATE_KEY: ${{ secrets.DEMO_PRIVATE_KEY }}
+        run: |
+          echo "Running Bad Debt Scenario..."
+          forge script script/scenarios/Scenario_BadDebt.s.sol:Scenario_BadDebt \
+            --rpc-url $SEPOLIA_RPC_URL \
+            --broadcast \
+            -vvvv
+
+      - name: Upload broadcast artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: broadcast-logs
+          path: broadcast/
+          retention-days: 30

@@ -12,10 +12,6 @@ import "../../test/Mocks.sol";
  * @dev Run with: source .env && forge script script/scenarios/Scenario_Liquidation.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast -vvvv
  */
 contract Scenario_Liquidation is Script {
-    // Core contracts (Sepolia)
-    address constant MARKET_PROXY = 0xbe4FD219B17C3E55562c9bD9254Bc3F3519D4BB6;
-    address constant VAULT_ADDR = 0x17A11c0Da8951765efFd58fA236053C14f779D03;
-
     // Scenario parameters
     uint256 constant LENDER_DEPOSIT = 100_000e6;
     uint256 constant COLLATERAL_AMOUNT = 10e18;
@@ -30,12 +26,14 @@ contract Scenario_Liquidation is Script {
         address deployer = vm.addr(pk);
 
         // Load addresses from env
+        address marketProxy = vm.envAddress("MARKET_V1_PROXY");
+        address vaultAddr = vm.envAddress("VAULT_ADDRESS");
         address usdcAddr = vm.envAddress("LOAN_ASSET_ADDRESS");
         address wethAddr = vm.envAddress("WETH_ADDRESS");
         address wethFeedAddr = vm.envAddress("WETH_FEED");
 
-        MarketV1 market = MarketV1(MARKET_PROXY);
-        Vault vault = Vault(VAULT_ADDR);
+        MarketV1 market = MarketV1(marketProxy);
+        Vault vault = Vault(vaultAddr);
         MockERC20 usdc = MockERC20(usdcAddr);
         MockERC20 weth = MockERC20(wethAddr);
         MockPriceFeed feed = MockPriceFeed(wethFeedAddr);

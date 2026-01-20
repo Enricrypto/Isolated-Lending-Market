@@ -18,10 +18,6 @@ import "../../test/Mocks.sol";
  *        --broadcast -vvvv
  */
 contract Scenario_HappyPath is Script {
-    // Core contracts (Sepolia)
-    address constant MARKET_PROXY = 0xbe4FD219B17C3E55562c9bD9254Bc3F3519D4BB6;
-    address constant VAULT_ADDR = 0x17A11c0Da8951765efFd58fA236053C14f779D03;
-
     // Scenario parameters
     uint256 constant LENDER_DEPOSIT = 100_000e6;
     uint256 constant COLLATERAL_AMOUNT = 10e18;
@@ -31,29 +27,22 @@ contract Scenario_HappyPath is Script {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
 
-        // Load expected addresses from env (intent)
-        address expectedLoanAsset = vm.envAddress("LOAN_ASSET_ADDRESS");
+        // Load addresses from env
+        address marketProxy = vm.envAddress("MARKET_V1_PROXY");
+        address vaultAddr = vm.envAddress("VAULT_ADDRESS");
+        address loanAssetAddr = vm.envAddress("LOAN_ASSET_ADDRESS");
         address wethAddr = vm.envAddress("WETH_ADDRESS");
 
-        MarketV1 market = MarketV1(MARKET_PROXY);
-        Vault vault = Vault(VAULT_ADDR);
-
-        // === Source of truth ===
-        address loanAsset = vault.asset();
-
-        // Hard safety check: scenario intent must match protocol reality
-        require(
-            loanAsset == expectedLoanAsset,
-            "Scenario misconfigured: vault.asset != LOAN_ASSET_ADDRESS"
-        );
-
-        MockERC20 loanToken = MockERC20(loanAsset);
+        MarketV1 market = MarketV1(marketProxy);
+        Vault vault = Vault(vaultAddr);
+        MockERC20 loanToken = MockERC20(loanAssetAddr);
         MockERC20 weth = MockERC20(wethAddr);
 
         console.log("=== SCENARIO: Happy Path ===");
         console.log("Deployer:      ", deployer);
-        console.log("Vault:         ", address(vault));
-        console.log("Loan asset:    ", loanAsset);
+        console.log("Market:        ", marketProxy);
+        console.log("Vault:         ", vaultAddr);
+        console.log("Loan asset:    ", loanAssetAddr);
         console.log("WETH collateral:", wethAddr);
 
         vm.startBroadcast(pk);

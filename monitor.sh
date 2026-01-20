@@ -4,7 +4,7 @@
 source .env
 
 # Use Alchemy RPC
-RPC_URL="https://eth-sepolia.g.alchemy.com/v2/rBgXMI1K1DTe3cHIew_X3VV1EcpMlzsp"
+RPC_URL="${SEPOLIA_RPC_URL}"
 
 # Colors
 GREEN='\033[0;32m'

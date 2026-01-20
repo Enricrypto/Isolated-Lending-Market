@@ -304,7 +304,8 @@ contract GovernanceTest is Test {
         vm.stopPrank();
 
         // 6. Unpause through timelock (only owner/timelock can unpause, not guardian)
-        bytes memory unpauseData = abi.encodeWithSelector(MarketV1.setBorrowingPaused.selector, false);
+        bytes memory unpauseData =
+            abi.encodeWithSelector(MarketV1.setBorrowingPaused.selector, false);
         bytes32 salt = keccak256("unpause");
 
         vm.prank(multisig);

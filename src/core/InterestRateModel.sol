@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import "./Vault.sol";
-import "./Market.sol";
+import "./MarketV1.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
@@ -42,7 +42,7 @@ contract InterestRateModel {
     Vault public immutable vaultContract;
 
     /// @notice Reference to market contract
-    Market public marketContract;
+    MarketV1 public marketContract;
 
     // ==================== CONSTANTS ====================
 
@@ -82,7 +82,7 @@ contract InterestRateModel {
         vaultContract = Vault(_vaultContract);
 
         if (_marketContract != address(0)) {
-            marketContract = Market(_marketContract);
+            marketContract = MarketV1(_marketContract);
         }
 
         owner = msg.sender;
@@ -105,7 +105,7 @@ contract InterestRateModel {
         if (address(marketContract) != address(0)) revert Errors.MarketAlreadySet();
         if (_market == address(0)) revert Errors.InvalidMarketAddress();
 
-        Market newMarket = Market(_market);
+        MarketV1 newMarket = MarketV1(_market);
         // Verify it's a valid market by checking it has the loanAsset
         try newMarket.loanAsset() returns (IERC20) {
             marketContract = newMarket;

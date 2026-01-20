@@ -3,11 +3,11 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Script.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import "../src/core/MarketV1.sol";
-import "../src/core/Vault.sol";
-import "../src/core/PriceOracle.sol";
-import "../src/core/InterestRateModel.sol";
-import "../src/governance/GovernanceSetup.sol";
+import "../../src/core/MarketV1.sol";
+import "../../src/core/Vault.sol";
+import "../../src/core/PriceOracle.sol";
+import "../../src/core/InterestRateModel.sol";
+import "../../src/governance/GovernanceSetup.sol";
 
 /**
  * @title DeployUpgradeable

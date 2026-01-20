@@ -376,7 +376,7 @@ contract MarketV1Test is Test {
     function testPauseAllowsLiquidations() public {
         // Setup: deposit and borrow at max
         uint256 collateralAmount = 10e18; // $20,000 worth
-        uint256 borrowAmount = 16000e6; // Close to max borrow
+        uint256 borrowAmount = 16_000e6; // Close to max borrow
 
         vm.startPrank(alice);
         weth.approve(address(market), collateralAmount);
@@ -392,7 +392,7 @@ contract MarketV1Test is Test {
 
         // Liquidations should still work
         vm.startPrank(bob);
-        usdc.approve(address(market), 20000e6);
+        usdc.approve(address(market), 20_000e6);
         market.liquidate(alice);
         vm.stopPrank();
 

@@ -75,7 +75,7 @@ contract UpgradeSimulationTest is Test {
         // Deploy price feeds
         usdcFeed = new MockPriceFeed(1e8); // $1.00
         wethFeed = new MockPriceFeed(2000e8); // $2000
-        wbtcFeed = new MockPriceFeed(50000e8); // $50000
+        wbtcFeed = new MockPriceFeed(50_000e8); // $50000
 
         // Deploy oracle
         oracle = new PriceOracle(deployer);
@@ -162,14 +162,14 @@ contract UpgradeSimulationTest is Test {
         vm.startPrank(alice);
         weth.approve(address(market), 10e18);
         market.depositCollateral(address(weth), 10e18);
-        market.borrow(10000e6);
+        market.borrow(10_000e6);
         vm.stopPrank();
 
         // Bob: deposits 1 WBTC, borrows 25,000 USDC
         vm.startPrank(bob);
         wbtc.approve(address(market), 1e8);
         market.depositCollateral(address(wbtc), 1e8);
-        market.borrow(25000e6);
+        market.borrow(25_000e6);
         vm.stopPrank();
 
         // Let some time pass for interest accrual
@@ -182,7 +182,8 @@ contract UpgradeSimulationTest is Test {
         uint256 bobDebtBefore = market.getUserTotalDebt(bob);
         uint256 totalBorrowsBefore = market.totalBorrows();
         uint256 globalIndexBefore = market.globalBorrowIndex();
-        (uint256 lltvBefore, uint256 penaltyBefore, uint256 feeBefore) = market.getMarketParameters();
+        (uint256 lltvBefore, uint256 penaltyBefore, uint256 feeBefore) =
+            market.getMarketParameters();
 
         // === UPGRADE ===
 
@@ -190,8 +191,9 @@ contract UpgradeSimulationTest is Test {
         MarketV1 newImplementation = new MarketV1();
 
         // Schedule upgrade through timelock
-        bytes memory upgradeData =
-            abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, address(newImplementation), "");
+        bytes memory upgradeData = abi.encodeWithSelector(
+            UUPSUpgradeable.upgradeToAndCall.selector, address(newImplementation), ""
+        );
         bytes32 salt = keccak256("upgrade-v1.1");
 
         vm.prank(multisig);
@@ -219,7 +221,9 @@ contract UpgradeSimulationTest is Test {
         );
         assertEq(market.getUserTotalDebt(alice), aliceDebtBefore, "Alice debt changed");
         assertEq(
-            market.userCollateralBalances(bob, address(wbtc)), bobCollateralBefore, "Bob collateral changed"
+            market.userCollateralBalances(bob, address(wbtc)),
+            bobCollateralBefore,
+            "Bob collateral changed"
         );
         assertEq(market.getUserTotalDebt(bob), bobDebtBefore, "Bob debt changed");
 
@@ -284,8 +288,9 @@ contract UpgradeSimulationTest is Test {
 
         // Deploy and schedule upgrade
         MarketV1 newImplementation = new MarketV1();
-        bytes memory upgradeData =
-            abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, address(newImplementation), "");
+        bytes memory upgradeData = abi.encodeWithSelector(
+            UUPSUpgradeable.upgradeToAndCall.selector, address(newImplementation), ""
+        );
         bytes32 salt = keccak256("upgrade-during-pause");
 
         vm.prank(multisig);
@@ -311,7 +316,8 @@ contract UpgradeSimulationTest is Test {
         vm.stopPrank();
 
         // Unpause through timelock
-        bytes memory unpauseData = abi.encodeWithSelector(MarketV1.setBorrowingPaused.selector, false);
+        bytes memory unpauseData =
+            abi.encodeWithSelector(MarketV1.setBorrowingPaused.selector, false);
         bytes32 unpauseSalt = keccak256("unpause");
 
         vm.prank(multisig);
@@ -333,13 +339,14 @@ contract UpgradeSimulationTest is Test {
         vm.startPrank(alice);
         weth.approve(address(market), 10e18);
         market.depositCollateral(address(weth), 10e18);
-        market.borrow(15000e6); // $15k against $20k collateral = 75% LTV
+        market.borrow(15_000e6); // $15k against $20k collateral = 75% LTV
         vm.stopPrank();
 
         // Perform upgrade
         MarketV1 newImplementation = new MarketV1();
-        bytes memory upgradeData =
-            abi.encodeWithSelector(UUPSUpgradeable.upgradeToAndCall.selector, address(newImplementation), "");
+        bytes memory upgradeData = abi.encodeWithSelector(
+            UUPSUpgradeable.upgradeToAndCall.selector, address(newImplementation), ""
+        );
         bytes32 salt = keccak256("upgrade-before-liquidation");
 
         vm.prank(multisig);

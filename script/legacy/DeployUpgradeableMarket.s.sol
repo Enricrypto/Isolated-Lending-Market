@@ -3,11 +3,11 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Script.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import "../src/core/MarketV1.sol";
-import "../src/core/Vault.sol";
-import "../src/core/PriceOracle.sol";
-import "../src/core/InterestRateModel.sol";
-import "../src/governance/GovernanceSetup.sol";
+import "../../src/core/MarketV1.sol";
+import "../../src/core/Vault.sol";
+import "../../src/core/PriceOracle.sol";
+import "../../src/core/InterestRateModel.sol";
+import "../../src/governance/GovernanceSetup.sol";
 
 /**
  * @title DeployUpgradeableMarket
@@ -24,13 +24,13 @@ contract DeployUpgradeableMarket is Script {
     // Market Parameters
     uint256 constant LLTV = 0.85e18; // 85%
     uint256 constant LIQUIDATION_PENALTY = 0.05e18; // 5%
-    uint256 constant PROTOCOL_FEE_RATE = 0.10e18; // 10%
+    uint256 constant PROTOCOL_FEE_RATE = 0.1e18; // 10%
 
     // Interest Rate Model Parameters
     uint256 constant BASE_RATE = 0.02e18; // 2%
     uint256 constant OPTIMAL_UTILIZATION = 0.8e18; // 80%
     uint256 constant SLOPE1 = 0.04e18; // 4%
-    uint256 constant SLOPE2 = 0.60e18; // 60%
+    uint256 constant SLOPE2 = 0.6e18; // 60%
 
     // Governance Parameters
     uint256 constant TIMELOCK_DELAY = 2 days;

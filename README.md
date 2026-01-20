@@ -77,20 +77,20 @@ The protocol is currently deployed and operational on Sepolia testnet with **UUP
 
 | Contract | Address | Description |
 |----------|---------|-------------|
-| **MarketV1 (Proxy)** | [`0xbe4f...4bb6`](https://sepolia.etherscan.io/address/0xbe4fd219b17c3e55562c9bd9254bc3f3519d4bb6) | Main entry point for users |
-| **MarketV1 (Implementation)** | [`0x383b...8266`](https://sepolia.etherscan.io/address/0x383bbcd792d6c60f6b87ae7522cfccfac9b68266) | Logic contract |
-| **Vault** | [`0x17a1...9d03`](https://sepolia.etherscan.io/address/0x17a11c0da8951765effd58fa236053c14f779d03) | ERC-4626 liquidity vault |
-| **PriceOracle** | [`0xdeae...3af8`](https://sepolia.etherscan.io/address/0xdeae17840f1111d032f16a6dec4126bd22b03af8) | Chainlink price feeds |
-| **InterestRateModel** | [`0x4820...7a44`](https://sepolia.etherscan.io/address/0x48205953f4ef7b432d0a4f3d0880b21a9bc97a44) | Jump rate model |
-| **MarketTimelock** | [`0xc3a5...2ac0`](https://sepolia.etherscan.io/address/0xc3a57b3b0df30312ce7b1db08b652c6216e22ac0) | 2-day governance delay |
+| **MarketV1 (Proxy)** | [`0xC223...E907`](https://sepolia.etherscan.io/address/0xC223C0634c6312Cb3Bf23e847f1C21Ae9ee9E907) | Main entry point for users |
+| **MarketV1 (Implementation)** | [`0xE28e...A2c8`](https://sepolia.etherscan.io/address/0xE28e6ac00d12Dd34c81E608299bFDdd53efDA2c8) | Logic contract |
+| **Vault** | [`0x662C...5AB6D`](https://sepolia.etherscan.io/address/0x662CAA602Ec32c9a5c67f971208DAeaBd255AB6D) | ERC-4626 liquidity vault |
+| **PriceOracle** | [`0xaA6B...8bD7`](https://sepolia.etherscan.io/address/0xaA6B38118a2581fe6659aFEA79cBF3829b848bD7) | Chainlink price feeds |
+| **InterestRateModel** | [`0x9997...7E0`](https://sepolia.etherscan.io/address/0x9997ACfd06004a2073B46A974258a9EC1066D7E0) | Jump rate model |
+| **MarketTimelock** | [`0xF36B...D838`](https://sepolia.etherscan.io/address/0xF36B006869bF22c11B1746a7207A250f2ab0D838) | 2-day governance delay |
 
 **Test Assets:**
 
 | Token | Address | Decimals |
 |-------|---------|----------|
-| **USDC (Mock)** | `0x4949E3c0fBA71d2A0031D9a648A17632E65ae495` | 6 |
-| **WETH (Mock)** | `0x4F61DeD7391d6F7EbEb8002481aFEc2ebd1D535c` | 18 |
-| **WBTC (Mock)** | `0x773269dE75Ec35Bd786337407af9E725e0E32dD5` | 8 |
+| **USDC (Mock)** | [`0xB6c0...CCBD`](https://sepolia.etherscan.io/address/0xB6c036875b7c36b2863FC40F61f019Df0b57CCBD) | 6 |
+| **WETH (Mock)** | [`0x8d95...A95`](https://sepolia.etherscan.io/address/0x8d952c27aC46B1A0360144c6094Ea6159a991A95) | 18 |
+| **WBTC (Mock)** | [`0x4d39...128`](https://sepolia.etherscan.io/address/0x4d3922e731023cd5fba64f495e547D5f1B931128) | 8 |
 
 **Try it out:**
 

@@ -83,11 +83,9 @@ contract MarketTimelock is TimelockController {
      * @param executors Addresses that can execute (address(0) means anyone after delay)
      * @dev Admin is set to address(0) so no one can modify roles after deployment
      */
-    constructor(
-        uint256 minDelay,
-        address[] memory proposers,
-        address[] memory executors
-    ) TimelockController(minDelay, proposers, executors, address(0)) {}
+    constructor(uint256 minDelay, address[] memory proposers, address[] memory executors)
+        TimelockController(minDelay, proposers, executors, address(0))
+    { }
 }
 
 /**

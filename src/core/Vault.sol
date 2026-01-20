@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/interfaces/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "./Market.sol";
+import "./MarketV1.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
 
@@ -36,7 +36,7 @@ contract Vault is ERC4626, ReentrancyGuard {
     // ==================== STATE VARIABLES ====================
 
     /// @notice Linked market contract for borrowing operations
-    Market public market;
+    MarketV1 public market;
 
     /// @notice Current yield strategy (ERC-4626 vault)
     IERC4626 public strategy;
@@ -410,7 +410,7 @@ contract Vault is ERC4626, ReentrancyGuard {
     function _setMarket(address _market) private {
         if (_market == address(0)) revert Errors.InvalidMarketAddress();
 
-        Market newMarket = Market(_market);
+        MarketV1 newMarket = MarketV1(_market);
 
         // Verify market's loan asset matches vault asset
         if (address(newMarket.loanAsset()) != asset()) {

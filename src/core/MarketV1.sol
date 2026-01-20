@@ -45,12 +45,7 @@ import "../libraries/DataTypes.sol";
  * - Storage layout preserved via MarketStorageV1 inheritance
  * - Future upgrades must maintain storage compatibility
  */
-contract MarketV1 is
-    Initializable,
-    MarketStorageV1,
-    ReentrancyGuard,
-    UUPSUpgradeable
-{
+contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgradeable {
     using Math for uint256;
 
     // ==================== CONSTANTS ====================
@@ -154,7 +149,7 @@ contract MarketV1 is
      * @param newImplementation Address of new implementation contract
      * @dev Only owner can authorize upgrades
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner { }
 
     // ==================== OWNERSHIP ====================
 
@@ -190,9 +185,7 @@ contract MarketV1 is
         if (_protocolFeeRate > PRECISION) revert Errors.ParameterTooHigh();
 
         marketParams = DataTypes.MarketParameters({
-            lltv: _lltv,
-            liquidationPenalty: _liquidationPenalty,
-            protocolFeeRate: _protocolFeeRate
+            lltv: _lltv, liquidationPenalty: _liquidationPenalty, protocolFeeRate: _protocolFeeRate
         });
 
         emit Events.MarketParametersUpdated(_lltv, _liquidationPenalty, _protocolFeeRate);
@@ -294,10 +287,11 @@ contract MarketV1 is
      * @param token Collateral token address
      * @param amount Amount in token's native decimals
      */
-    function depositCollateral(
-        address token,
-        uint256 amount
-    ) external nonReentrant notSystemAddress {
+    function depositCollateral(address token, uint256 amount)
+        external
+        nonReentrant
+        notSystemAddress
+    {
         _updateGlobalBorrowIndex();
 
         if (!supportedCollateralTokens[token]) revert Errors.TokenNotSupported();
@@ -333,10 +327,11 @@ contract MarketV1 is
      * @param token Collateral token address
      * @param rawAmount Amount in token's native decimals
      */
-    function withdrawCollateral(
-        address token,
-        uint256 rawAmount
-    ) external nonReentrant notSystemAddress {
+    function withdrawCollateral(address token, uint256 rawAmount)
+        external
+        nonReentrant
+        notSystemAddress
+    {
         _updateGlobalBorrowIndex();
 
         if (!supportedCollateralTokens[token]) revert Errors.TokenNotSupported();
@@ -474,10 +469,8 @@ contract MarketV1 is
         if (!transferSuccess) revert Errors.TransferFailed();
 
         // Send protocol fee to treasury
-        bool feeSuccess = loanAsset.transfer(
-            protocolTreasury,
-            _denormalizeAmount(protocolFee, loanDecimals)
-        );
+        bool feeSuccess =
+            loanAsset.transfer(protocolTreasury, _denormalizeAmount(protocolFee, loanDecimals));
         if (!feeSuccess) revert Errors.TransferFailed();
 
         // Repay to vault
@@ -527,9 +520,10 @@ contract MarketV1 is
      * @return collateralToSeize Collateral to seize in USD (18 decimals)
      * @return badDebt Bad debt amount in USD (18 decimals)
      */
-    function _calculateLiquidation(
-        address borrower
-    ) internal returns (uint256 debtToCover, uint256 collateralToSeize, uint256 badDebt) {
+    function _calculateLiquidation(address borrower)
+        internal
+        returns (uint256 debtToCover, uint256 collateralToSeize, uint256 badDebt)
+    {
         if (_isHealthy(borrower)) revert Errors.PositionIsHealthy();
 
         uint256 currentDebt = _getUserTotalDebt(borrower);
@@ -559,18 +553,14 @@ contract MarketV1 is
      * @param liquidator Address of liquidator
      * @param debtToCover Amount of debt to cover in USD (18 decimals)
      */
-    function _processLiquidatorRepayment(
-        address borrower,
-        address liquidator,
-        uint256 debtToCover
-    ) internal {
+    function _processLiquidatorRepayment(address borrower, address liquidator, uint256 debtToCover)
+        internal
+    {
         uint8 loanDecimals = _getLoanAssetDecimals();
 
         // Transfer repayment from liquidator
         bool transferSuccess = loanAsset.transferFrom(
-            liquidator,
-            address(this),
-            _denormalizeAmount(debtToCover, loanDecimals)
+            liquidator, address(this), _denormalizeAmount(debtToCover, loanDecimals)
         );
         if (!transferSuccess) revert Errors.TransferFailed();
 
@@ -591,9 +581,8 @@ contract MarketV1 is
         vaultContract.adminRepay(_denormalizeAmount(netRepayToVault, loanDecimals));
 
         // Calculate principal repayment
-        uint256 principalRepayment = debtToCover > interestAccrued
-            ? debtToCover - interestAccrued
-            : 0;
+        uint256 principalRepayment =
+            debtToCover > interestAccrued ? debtToCover - interestAccrued : 0;
 
         // Cap principal at user's actual debt
         if (principalRepayment > userTotalDebt[borrower]) {
@@ -613,11 +602,10 @@ contract MarketV1 is
      * @param collateralToSeizeUsd USD value to seize (18 decimals)
      * @return totalSeized Total USD value actually seized
      */
-    function _seizeCollateral(
-        address borrower,
-        address liquidator,
-        uint256 collateralToSeizeUsd
-    ) internal returns (uint256 totalSeized) {
+    function _seizeCollateral(address borrower, address liquidator, uint256 collateralToSeizeUsd)
+        internal
+        returns (uint256 totalSeized)
+    {
         address[] memory collateralTokens = userCollateralAssets[borrower];
         uint256 remainingToSeize = collateralToSeizeUsd;
 
@@ -771,9 +759,11 @@ contract MarketV1 is
      * @param user Address of user
      * @return position User's position data
      */
-    function getUserPosition(
-        address user
-    ) external view returns (DataTypes.UserPosition memory position) {
+    function getUserPosition(address user)
+        external
+        view
+        returns (DataTypes.UserPosition memory position)
+    {
         position.collateralValue = _getUserTotalCollateralValue(user);
         position.totalDebt = _getUserTotalDebt(user);
         position.healthFactor = _calculateHealthFactor(user);
@@ -1041,10 +1031,11 @@ contract MarketV1 is
      * @return Denormalized amount (rounded up)
      * @dev Used when we need to ensure full payment (e.g., repayments)
      */
-    function _denormalizeAmountRoundUp(
-        uint256 amount,
-        uint8 decimals
-    ) internal pure returns (uint256) {
+    function _denormalizeAmountRoundUp(uint256 amount, uint8 decimals)
+        internal
+        pure
+        returns (uint256)
+    {
         if (decimals == TARGET_DECIMALS) return amount;
         uint256 divisor = 10 ** (TARGET_DECIMALS - decimals);
         return Math.ceilDiv(amount, divisor);

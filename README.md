@@ -79,7 +79,7 @@ The protocol is currently deployed and operational on Sepolia testnet with **UUP
 |----------|---------|-------------|
 | **MarketV1 (Proxy)** | [`0xC223...E907`](https://sepolia.etherscan.io/address/0xC223C0634c6312Cb3Bf23e847f1C21Ae9ee9E907) | Main entry point for users |
 | **MarketV1 (Implementation)** | [`0xE28e...A2c8`](https://sepolia.etherscan.io/address/0xE28e6ac00d12Dd34c81E608299bFDdd53efDA2c8) | Logic contract |
-| **Vault** | [`0x662C...5AB6D`](https://sepolia.etherscan.io/address/0x662CAA602Ec32c9a5c67f971208DAeaBd255AB6D) | ERC-4626 liquidity vault |
+| **Vault** | [`0xE554...D3B`](https://sepolia.etherscan.io/address/0xE5543F72AF9411936497Dc7816eB4131bB705D3B) | ERC-4626 liquidity vault |
 | **PriceOracle** | [`0xaA6B...8bD7`](https://sepolia.etherscan.io/address/0xaA6B38118a2581fe6659aFEA79cBF3829b848bD7) | Chainlink price feeds |
 | **InterestRateModel** | [`0x9997...7E0`](https://sepolia.etherscan.io/address/0x9997ACfd06004a2073B46A974258a9EC1066D7E0) | Jump rate model |
 | **MarketTimelock** | [`0xF36B...D838`](https://sepolia.etherscan.io/address/0xF36B006869bF22c11B1746a7207A250f2ab0D838) | 2-day governance delay |
@@ -88,9 +88,9 @@ The protocol is currently deployed and operational on Sepolia testnet with **UUP
 
 | Token | Address | Decimals |
 |-------|---------|----------|
-| **USDC (Mock)** | [`0xB6c0...CCBD`](https://sepolia.etherscan.io/address/0xB6c036875b7c36b2863FC40F61f019Df0b57CCBD) | 6 |
+| **USDC (Mock)** | [`0x4d39...128`](https://sepolia.etherscan.io/address/0x4d3922e731023cd5fba64f495e547D5f1B931128) | 6 |
 | **WETH (Mock)** | [`0x8d95...A95`](https://sepolia.etherscan.io/address/0x8d952c27aC46B1A0360144c6094Ea6159a991A95) | 18 |
-| **WBTC (Mock)** | [`0x4d39...128`](https://sepolia.etherscan.io/address/0x4d3922e731023cd5fba64f495e547D5f1B931128) | 8 |
+| **WBTC (Mock)** | [`0x662C...B6D`](https://sepolia.etherscan.io/address/0x662CAA602Ec32c9a5c67f971208DAeaBd255AB6D) | 8 |
 
 **Try it out:**
 

@@ -22,8 +22,8 @@ contract Scenario_Liquidation is Script {
     int256 constant CRASHED_PRICE = 120_000_000_000; // $1200
 
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(pk);
+        uint256 pk = vm.envUint("SCENARIO_PRIVATE_KEY");
+        address user = vm.addr(pk);
 
         // Load addresses from env
         address marketProxy = vm.envAddress("MARKET_V1_PROXY");
@@ -39,19 +39,19 @@ contract Scenario_Liquidation is Script {
         MockPriceFeed feed = MockPriceFeed(wethFeedAddr);
 
         console.log("=== SCENARIO: Liquidation ===");
-        console.log("Deployer:", deployer);
+        console.log("Deployer:", user);
 
         vm.startBroadcast(pk);
 
         // Setup
-        usdc.mint(deployer, LENDER_DEPOSIT + BORROW_AMOUNT * 2);
-        weth.mint(deployer, COLLATERAL_AMOUNT);
+        usdc.mint(user, LENDER_DEPOSIT + BORROW_AMOUNT * 2);
+        weth.mint(user, COLLATERAL_AMOUNT);
         feed.setPrice(INITIAL_PRICE);
         console.log("1. Setup complete, WETH price: $2000");
 
         // Deposit to vault
         usdc.approve(address(vault), LENDER_DEPOSIT);
-        vault.deposit(LENDER_DEPOSIT, deployer);
+        vault.deposit(LENDER_DEPOSIT, user);
         console.log("2. Deposited to vault");
 
         // Deposit collateral
@@ -62,16 +62,16 @@ contract Scenario_Liquidation is Script {
         // Aggressive borrow
         market.borrow(BORROW_AMOUNT);
         console.log("4. Borrowed:", BORROW_AMOUNT / 1e6, "USDC");
-        console.log("   Position healthy:", market.isHealthy(deployer));
+        console.log("   Position healthy:", market.isHealthy(user));
 
         // Price crash
         feed.setPrice(CRASHED_PRICE);
         console.log("5. PRICE CRASH! WETH now $1200 (40% drop)");
-        console.log("   Position healthy:", market.isHealthy(deployer));
+        console.log("   Position healthy:", market.isHealthy(user));
 
         // Liquidate
         usdc.approve(address(market), type(uint256).max);
-        market.liquidate(deployer);
+        market.liquidate(user);
         console.log("6. Liquidation executed!");
 
         // Restore price

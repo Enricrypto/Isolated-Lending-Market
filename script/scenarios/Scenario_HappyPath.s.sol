@@ -24,8 +24,8 @@ contract Scenario_HappyPath is Script {
     uint256 constant BORROW_AMOUNT = 10_000e6;
 
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(pk);
+        uint256 pk = vm.envUint("SCENARIO_PRIVATE_KEY");
+        address user = vm.addr(pk);
 
         // Load addresses from env
         address marketProxy = vm.envAddress("MARKET_V1_PROXY");
@@ -39,7 +39,7 @@ contract Scenario_HappyPath is Script {
         MockERC20 weth = MockERC20(wethAddr);
 
         console.log("=== SCENARIO: Happy Path ===");
-        console.log("Deployer:      ", deployer);
+        console.log("Deployer:      ", user);
         console.log("Market:        ", marketProxy);
         console.log("Vault:         ", vaultAddr);
         console.log("Loan asset:    ", loanAssetAddr);
@@ -50,15 +50,15 @@ contract Scenario_HappyPath is Script {
         // ------------------------------------------------------------
         // 1. Mint tokens
         // ------------------------------------------------------------
-        loanToken.mint(deployer, LENDER_DEPOSIT + BORROW_AMOUNT);
-        weth.mint(deployer, COLLATERAL_AMOUNT);
+        loanToken.mint(user, LENDER_DEPOSIT + BORROW_AMOUNT);
+        weth.mint(user, COLLATERAL_AMOUNT);
         console.log("1. Minted loan asset and collateral");
 
         // ------------------------------------------------------------
         // 2. Deposit to vault (ERC-4626 asset)
         // ------------------------------------------------------------
         loanToken.approve(address(vault), LENDER_DEPOSIT);
-        vault.deposit(LENDER_DEPOSIT, deployer);
+        vault.deposit(LENDER_DEPOSIT, user);
         console.log("2. Deposited to vault:", LENDER_DEPOSIT / 1e6, "loan units");
 
         // ------------------------------------------------------------
@@ -77,7 +77,7 @@ contract Scenario_HappyPath is Script {
         // ------------------------------------------------------------
         // 5. Repay
         // ------------------------------------------------------------
-        uint256 repayAmount = market.getRepayAmount(deployer);
+        uint256 repayAmount = market.getRepayAmount(user);
         loanToken.approve(address(market), repayAmount);
         market.repay(repayAmount);
         console.log("5. Repaid:", repayAmount / 1e6, "loan units");
@@ -91,8 +91,8 @@ contract Scenario_HappyPath is Script {
         // ------------------------------------------------------------
         // 7. Redeem from vault
         // ------------------------------------------------------------
-        uint256 maxRedeem = vault.maxRedeem(deployer);
-        vault.redeem(maxRedeem, deployer, deployer);
+        uint256 maxRedeem = vault.maxRedeem(user);
+        vault.redeem(maxRedeem, user, user);
         console.log("7. Redeemed from vault");
 
         vm.stopBroadcast();

@@ -22,8 +22,8 @@ contract Scenario_BadDebt is Script {
     int256 constant CRASHED_PRICE = 40_000_000_000; // $400 (80% drop)
 
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(pk);
+        uint256 pk = vm.envUint("SCENARIO_PRIVATE_KEY");
+        address user = vm.addr(pk);
 
         // Load addresses from env
         address marketProxy = vm.envAddress("MARKET_V1_PROXY");
@@ -39,19 +39,19 @@ contract Scenario_BadDebt is Script {
         MockPriceFeed feed = MockPriceFeed(wethFeedAddr);
 
         console.log("=== SCENARIO: Bad Debt (Black Swan) ===");
-        console.log("Deployer:", deployer);
+        console.log("Deployer:", user);
 
         vm.startBroadcast(pk);
 
         // Setup
-        usdc.mint(deployer, LENDER_DEPOSIT + BORROW_AMOUNT * 2);
-        weth.mint(deployer, COLLATERAL_AMOUNT);
+        usdc.mint(user, LENDER_DEPOSIT + BORROW_AMOUNT * 2);
+        weth.mint(user, COLLATERAL_AMOUNT);
         feed.setPrice(INITIAL_PRICE);
         console.log("1. Setup complete, WETH price: $2000");
 
         // Deposit to vault
         usdc.approve(address(vault), LENDER_DEPOSIT);
-        vault.deposit(LENDER_DEPOSIT, deployer);
+        vault.deposit(LENDER_DEPOSIT, user);
         console.log("2. Deposited to vault");
 
         // Deposit collateral
@@ -71,11 +71,11 @@ contract Scenario_BadDebt is Script {
 
         // Liquidate with bad debt
         usdc.approve(address(market), type(uint256).max);
-        market.liquidate(deployer);
+        market.liquidate(user);
         console.log("6. Liquidation executed");
 
         // Check bad debt
-        uint256 badDebt = market.getBadDebt(deployer);
+        uint256 badDebt = market.getBadDebt(user);
         console.log("7. Bad debt generated:", badDebt / 1e18, "USD");
 
         // Restore price

@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
+import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "LendCore | Risk Monitoring Dashboard",
-  description: "Real-time monitoring dashboard for the lending protocol",
+  title: "LendCore | Protocol Dashboard",
+  description: "Lending Protocol Dashboard - Manage vaults, monitor risk, and interact with the protocol",
 };
 
 export default function RootLayout({
@@ -27,10 +28,12 @@ export default function RootLayout({
         <div className="fixed inset-0 z-0 bg-cosmic-gradient pointer-events-none" />
         <div className="fixed inset-0 z-0 bg-grid-pattern pointer-events-none opacity-40" />
 
-        <Sidebar />
-        <main className="md:ml-72 flex flex-col min-h-screen relative z-10">
-          {children}
-        </main>
+        <Providers>
+          <Sidebar />
+          <main className="md:ml-72 flex flex-col min-h-screen relative z-10">
+            {children}
+          </main>
+        </Providers>
       </body>
     </html>
   );

@@ -4,29 +4,34 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Droplets,
   TrendingUp,
-  Eye,
-  Zap,
+  Wallet,
   Settings,
-  FileText,
+  ShieldAlert,
+  ChevronDown,
+  User,
 } from "lucide-react";
+import { useAccount } from "wagmi";
 
-const riskNavigation = [
-  { name: "Overview", href: "/", icon: LayoutDashboard },
-  { name: "Liquidity Depth", href: "/liquidity", icon: Droplets },
-  { name: "Rates & Convexity", href: "/rates", icon: TrendingUp },
-  { name: "Oracle Health", href: "/oracle", icon: Eye },
-  { name: "Utilization Velocity", href: "/utilization", icon: Zap },
+const coreNavigation = [
+  { name: "Vault Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Monitoring & Analytics", href: "/monitoring", icon: TrendingUp },
+  { name: "Token Management", href: "/deposit", icon: Wallet },
 ];
 
-const systemNavigation = [
-  { name: "Settings", href: "/settings", icon: Settings },
-  { name: "Logs", href: "/logs", icon: FileText },
+const adminNavigation = [
+  { name: "Strategy Config", href: "/strategy", icon: Settings },
+  { name: "Risk Engine", href: "/risk-engine", icon: ShieldAlert },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { address, isConnected } = useAccount();
+
+  // Format address for display
+  const formatAddress = (addr: string) => {
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  };
 
   return (
     <aside className="fixed top-0 left-0 w-72 h-screen border-r border-midnight-700/50 flex-col bg-midnight-950/80 backdrop-blur-xl hidden md:flex z-50">
@@ -49,11 +54,12 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
         <div className="px-3 mb-3 text-[10px] font-bold text-indigo-400/80 uppercase tracking-[0.2em]">
-          Risk Management
+          Core Modules
         </div>
 
-        {riskNavigation.map((item) => {
-          const isActive = pathname === item.href;
+        {coreNavigation.map((item) => {
+          const isActive = pathname === item.href ||
+            (item.href === "/monitoring" && pathname.startsWith("/monitoring"));
           const Icon = item.icon;
 
           return (
@@ -79,10 +85,10 @@ export function Sidebar() {
         })}
 
         <div className="px-3 mt-8 mb-3 text-[10px] font-bold text-indigo-400/80 uppercase tracking-[0.2em]">
-          System
+          Admin
         </div>
 
-        {systemNavigation.map((item) => {
+        {adminNavigation.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
 
@@ -109,19 +115,25 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
+      {/* User / Network */}
       <div className="p-4 border-t border-midnight-700/50 flex-shrink-0">
-        <div className="flex items-center gap-3 p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
-          <div className="w-9 h-9 rounded-md bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs shadow-lg shadow-indigo-500/20">
-            A
+        <button className="w-full flex items-center justify-between p-2 rounded-lg bg-midnight-900 border border-midnight-700/50 hover:border-indigo-500/30 transition-all group">
+          <div className="flex items-center gap-3">
+            <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+              <User className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex flex-col items-start">
+              <span className="text-xs font-medium text-slate-200">
+                {isConnected && address ? formatAddress(address) : "Not Connected"}
+              </span>
+              <span className="text-[10px] text-emerald-500 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                Sepolia
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-white">Admin</span>
-            <span className="text-[10px] text-indigo-300/70">
-              monitoring@lendcore.fi
-            </span>
-          </div>
-        </div>
+          <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
+        </button>
       </div>
     </aside>
   );

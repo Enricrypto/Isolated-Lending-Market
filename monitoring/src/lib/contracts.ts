@@ -1,5 +1,70 @@
-// Contract ABIs - minimal view functions for monitoring
-// Addresses loaded from environment variables
+// Contract ABIs for LendCore Protocol
+// Includes both view functions (monitoring) and write functions (user interactions)
+
+// ==================== ERC20 ABI ====================
+
+export const ERC20_ABI = [
+  {
+    inputs: [{ name: "account", type: "address" }],
+    name: "balanceOf",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    name: "allowance",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [{ type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    name: "transfer",
+    outputs: [{ type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "decimals",
+    outputs: [{ type: "uint8" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "symbol",
+    outputs: [{ type: "string" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "name",
+    outputs: [{ type: "string" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+// ==================== MARKET ABI ====================
 
 export const MARKET_ABI = [
   {
@@ -30,7 +95,76 @@ export const MARKET_ABI = [
     stateMutability: "view",
     type: "function",
   },
+  // Write functions
+  {
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    name: "depositCollateral",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "rawAmount", type: "uint256" },
+    ],
+    name: "withdrawCollateral",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "amount", type: "uint256" }],
+    name: "borrow",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "amount", type: "uint256" }],
+    name: "repay",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  // Position view functions
+  {
+    inputs: [{ name: "user", type: "address" }],
+    name: "getUserPosition",
+    outputs: [
+      {
+        components: [
+          { name: "collateralValue", type: "uint256" },
+          { name: "totalDebt", type: "uint256" },
+          { name: "healthFactor", type: "uint256" },
+          { name: "borrowingPower", type: "uint256" },
+        ],
+        type: "tuple",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "user", type: "address" }],
+    name: "isHealthy",
+    outputs: [{ type: "bool" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "getLendingRate",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
 ] as const;
+
+// ==================== VAULT ABI (ERC4626) ====================
 
 export const VAULT_ABI = [
   {
@@ -61,7 +195,95 @@ export const VAULT_ABI = [
     stateMutability: "view",
     type: "function",
   },
+  // ERC4626 write functions
+  {
+    inputs: [
+      { name: "assets", type: "uint256" },
+      { name: "receiver", type: "address" },
+    ],
+    name: "deposit",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "shares", type: "uint256" },
+      { name: "receiver", type: "address" },
+    ],
+    name: "mint",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "assets", type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "owner", type: "address" },
+    ],
+    name: "withdraw",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "shares", type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "owner", type: "address" },
+    ],
+    name: "redeem",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  // ERC4626 view functions
+  {
+    inputs: [{ name: "owner", type: "address" }],
+    name: "maxWithdraw",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "owner", type: "address" }],
+    name: "maxRedeem",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "assets", type: "uint256" }],
+    name: "previewDeposit",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "shares", type: "uint256" }],
+    name: "previewRedeem",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "account", type: "address" }],
+    name: "balanceOf",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "asset",
+    outputs: [{ type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
 ] as const;
+
+// ==================== INTEREST RATE MODEL ABI ====================
 
 export const IRM_ABI = [
   {

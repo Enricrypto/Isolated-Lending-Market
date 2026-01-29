@@ -15,7 +15,9 @@ import {
   getContractAddresses,
 } from "./contracts";
 import type { SeverityLevel } from "@/types/metrics";
-import { Decimal } from "@prisma/client/runtime/library";
+import { Prisma } from "@prisma/client";
+
+const Decimal = Prisma.Decimal;
 
 // Polling interval in milliseconds (5 minutes)
 export const POLLING_INTERVAL = 5 * 60 * 1000;

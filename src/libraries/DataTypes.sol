@@ -56,4 +56,59 @@ library DataTypes {
         uint256 lastUpdateTimestamp;
         uint256 totalBorrows;
     }
+
+    // ==================== RISK ENGINE DATA TYPES ====================
+
+    /// @notice Configuration for the Risk Engine's scoring thresholds
+    /// @dev All thresholds are in 18-decimal precision unless stated otherwise
+    struct RiskEngineConfig {
+        // Oracle risk thresholds
+        uint256 oracleFreshnessThreshold; // seconds before price is "stale" (e.g., 3600)
+        uint256 oracleDeviationTolerance; // max Chainlink-vs-TWAP deviation (e.g., 0.02e18 = 2%)
+        uint256 oracleCriticalDeviation; // deviation triggering critical (e.g., 0.05e18 = 5%)
+        uint256 lkgDecayHalfLife; // seconds for LKG confidence to halve (e.g., 1800)
+        uint256 lkgMaxAge; // seconds before LKG is considered fully decayed
+        // Liquidity risk thresholds
+        uint256 utilizationWarning; // utilization triggering elevated (e.g., 0.85e18)
+        uint256 utilizationCritical; // utilization triggering critical (e.g., 0.95e18)
+        // Solvency risk thresholds
+        uint256 healthFactorWarning; // aggregate HF below this = elevated (e.g., 1.2e18)
+        uint256 healthFactorCritical; // aggregate HF below this = critical (e.g., 1.05e18)
+        uint256 badDebtThreshold; // bad debt ratio triggering concern (e.g., 0.01e18 = 1%)
+        // Strategy risk thresholds
+        uint256 strategyAllocationCap; // max % of vault in strategy (e.g., 0.95e18)
+    }
+
+    /// @notice Per-dimension risk score (0-100)
+    struct DimensionScore {
+        uint8 oracleRisk;
+        uint8 liquidityRisk;
+        uint8 solvencyRisk;
+        uint8 strategyRisk;
+    }
+
+    /// @notice Full risk assessment output
+    struct RiskAssessment {
+        DimensionScore scores;
+        uint8 severity; // 0=Normal, 1=Elevated, 2=Critical, 3=Emergency
+        uint64 timestamp; // when assessment was computed
+        bytes32 reasonCodes; // packed reason flags (32 possible reasons)
+    }
+
+    /// @notice Oracle evaluation result from hierarchical resolution
+    struct OracleEvaluation {
+        uint256 resolvedPrice; // final price used (18 decimals)
+        uint256 confidence; // 0-1e18, how confident we are in this price
+        uint8 sourceUsed; // 0=Chainlink fresh, 1=Chainlink+TWAP consensus, 2=LKG fallback
+        uint8 oracleRiskScore; // 0-100 risk score from oracle evaluation
+        bool isStale; // whether primary source was stale
+        uint256 deviation; // deviation between sources (18 decimals)
+    }
+
+    /// @notice Last Known Good price entry
+    struct LKGPrice {
+        uint256 price; // normalized to 18 decimals
+        uint64 timestamp; // when this LKG was recorded
+        uint64 updatedAt; // Chainlink updatedAt when LKG was set
+    }
 }

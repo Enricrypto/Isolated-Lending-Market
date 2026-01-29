@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import "@openzeppelin/contracts/interfaces/IERC20.sol";
+import "../src/interfaces/ITWAPOracle.sol";
 
 /**
  * @title MockERC20
@@ -269,5 +270,100 @@ contract MockYieldStrategy is ERC4626 {
 
     function previewRedeem(uint256 shares) public view override returns (uint256) {
         return convertToAssets(shares);
+    }
+}
+
+/**
+ * @title MockConfigurablePriceFeed
+ * @notice Mock Chainlink price feed with configurable staleness and round data
+ * @dev Used for Risk Engine and OracleRouter testing
+ */
+contract MockConfigurablePriceFeed {
+    int256 private price;
+    uint256 private _updatedAt;
+    uint80 private _roundId;
+    uint80 private _answeredInRound;
+    bool private _shouldRevert;
+
+    constructor(int256 initialPrice) {
+        price = initialPrice;
+        _updatedAt = block.timestamp;
+        _roundId = 1;
+        _answeredInRound = 1;
+    }
+
+    function setPrice(int256 _price) external {
+        price = _price;
+        _updatedAt = block.timestamp;
+    }
+
+    function setPriceWithTimestamp(int256 _price, uint256 updatedAt_) external {
+        price = _price;
+        _updatedAt = updatedAt_;
+    }
+
+    function setUpdatedAt(uint256 updatedAt_) external {
+        _updatedAt = updatedAt_;
+    }
+
+    function setRoundData(uint80 roundId_, uint80 answeredInRound_) external {
+        _roundId = roundId_;
+        _answeredInRound = answeredInRound_;
+    }
+
+    function setShouldRevert(bool shouldRevert_) external {
+        _shouldRevert = shouldRevert_;
+    }
+
+    function decimals() external pure returns (uint8) {
+        return 8;
+    }
+
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        require(!_shouldRevert, "MockConfigurablePriceFeed: forced revert");
+        return (_roundId, price, _updatedAt, _updatedAt, _answeredInRound);
+    }
+}
+
+/**
+ * @title MockTWAPOracle
+ * @notice Mock TWAP oracle for testing OracleRouter cross-validation
+ */
+contract MockTWAPOracle is ITWAPOracle {
+    mapping(address => uint256) public prices;
+    mapping(address => bool) public supported;
+    uint256 public lastUpdate;
+    bool public shouldRevert;
+
+    constructor() {
+        lastUpdate = block.timestamp;
+    }
+
+    function setPrice(address asset, uint256 _price) external {
+        prices[asset] = _price;
+        supported[asset] = true;
+        lastUpdate = block.timestamp;
+    }
+
+    function setSupported(address asset, bool _supported) external {
+        supported[asset] = _supported;
+    }
+
+    function setShouldRevert(bool _shouldRevert) external {
+        shouldRevert = _shouldRevert;
+    }
+
+    function getTWAP(address asset, uint32) external view returns (uint256 price, uint256 updatedAt) {
+        require(!shouldRevert, "MockTWAPOracle: forced revert");
+        require(supported[asset], "Asset not supported");
+        return (prices[asset], lastUpdate);
+    }
+
+    function supportsAsset(address asset) external view returns (bool) {
+        return supported[asset];
     }
 }

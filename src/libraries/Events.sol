@@ -116,4 +116,31 @@ library Events {
 
     /// @notice Emitted when market contract is set
     event MarketContractSet(address indexed market);
+
+    // ==================== RISK ENGINE EVENTS ====================
+
+    /// @notice Emitted when a risk assessment is computed (for off-chain indexing)
+    event RiskAssessed(
+        uint8 severity,
+        uint8 oracleRisk,
+        uint8 liquidityRisk,
+        uint8 solvencyRisk,
+        uint8 strategyRisk,
+        bytes32 reasonCodes
+    );
+
+    /// @notice Emitted when Risk Engine configuration is updated
+    event RiskEngineConfigUpdated(address indexed caller);
+
+    /// @notice Emitted when a LKG price is recorded
+    event LKGPriceUpdated(address indexed asset, uint256 price, uint64 timestamp);
+
+    /// @notice Emitted when a TWAP oracle is registered
+    event TWAPOracleRegistered(address indexed asset, address indexed twapOracle);
+
+    /// @notice Emitted when a TWAP oracle is removed
+    event TWAPOracleRemoved(address indexed asset);
+
+    /// @notice Emitted when oracle evaluation uses fallback
+    event OracleFallbackUsed(address indexed asset, uint8 sourceUsed, uint256 resolvedPrice, uint256 confidence);
 }

@@ -10,11 +10,13 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./MarketV1.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
+import "../access/ProtocolAccessControl.sol";
 
 /**
  * @title Vault
  * @notice ERC-4626 compliant vault for lending protocol liquidity management
- * @dev Integrates with external yield strategies while serving market borrow demands
+ * @dev Integrates with external yield strategies while serving market borrow demands.
+ *      Uses AccessControl for role-based permissions (STRATEGY_MANAGER_ROLE).
  * @author Your Team
  *
  * Key Features:
@@ -30,7 +32,7 @@ import "../libraries/Events.sol";
  * - Market can borrow from vault for lending operations
  * - Total assets = strategy assets + market borrows (with interest)
  */
-contract Vault is ERC4626, ReentrancyGuard {
+contract Vault is ERC4626, ReentrancyGuard, ProtocolAccessControl {
     using Math for uint256;
 
     // ==================== STATE VARIABLES ====================
@@ -41,7 +43,7 @@ contract Vault is ERC4626, ReentrancyGuard {
     /// @notice Current yield strategy (ERC-4626 vault)
     IERC4626 public strategy;
 
-    /// @notice Vault owner with admin privileges
+    /// @notice Legacy marketOwner variable (deprecated, use AccessControl roles)
     address public marketOwner;
 
     /// @notice Strategy change in progress flag
@@ -58,6 +60,7 @@ contract Vault is ERC4626, ReentrancyGuard {
      * @param _asset Underlying asset (e.g., USDC)
      * @param _marketContract Market contract address (can be set later)
      * @param _strategy Initial yield strategy address
+     * @param _owner Initial owner address
      * @param _name Vault token name
      * @param _symbol Vault token symbol
      */
@@ -65,11 +68,13 @@ contract Vault is ERC4626, ReentrancyGuard {
         IERC20 _asset,
         address _marketContract,
         address _strategy,
+        address _owner,
         string memory _name,
         string memory _symbol
     ) ERC20(_name, _symbol) ERC4626(IERC20(_asset)) {
         if (address(_asset) == address(0)) revert Errors.InvalidTokenAddress();
         if (_strategy == address(0)) revert Errors.InvalidStrategy();
+        if (_owner == address(0)) revert Errors.ZeroAddress();
 
         // Verify strategy asset matches vault asset
         if (ERC4626(_strategy).asset() != address(_asset)) {
@@ -77,7 +82,11 @@ contract Vault is ERC4626, ReentrancyGuard {
         }
 
         strategy = ERC4626(_strategy);
-        marketOwner = msg.sender;
+        marketOwner = _owner;
+
+        // Initialize AccessControl
+        _initializeAccessControl(_owner);
+        _grantRole(ProtocolRoles.STRATEGY_MANAGER_ROLE, _owner);
 
         // Pre-approve strategy for deposits
         IERC20(_asset).approve(address(strategy), type(uint256).max);
@@ -90,10 +99,7 @@ contract Vault is ERC4626, ReentrancyGuard {
 
     // ==================== MODIFIERS ====================
 
-    modifier onlyMarketOwner() {
-        if (msg.sender != marketOwner) revert Errors.OnlyMarketOwner();
-        _;
-    }
+    // Note: Role-based modifiers inherited from ProtocolAccessControl (onlyStrategyManager)
 
     modifier onlyMarket() {
         if (msg.sender != address(market)) revert Errors.OnlyMarket();
@@ -112,7 +118,7 @@ contract Vault is ERC4626, ReentrancyGuard {
      * @param _market Market contract address
      * @dev Can only be called once, validates the market contract
      */
-    function setMarket(address _market) external onlyMarketOwner {
+    function setMarket(address _market) external onlyStrategyManager {
         if (address(market) != address(0)) revert Errors.MarketAlreadySet();
         _setMarket(_market);
     }
@@ -122,7 +128,7 @@ contract Vault is ERC4626, ReentrancyGuard {
      * @param _newStrategy New strategy address
      * @dev Migrates all funds from old strategy to new strategy atomically
      */
-    function changeStrategy(address _newStrategy) external onlyMarketOwner nonReentrant {
+    function changeStrategy(address _newStrategy) external onlyStrategyManager nonReentrant {
         if (_newStrategy == address(0)) revert Errors.InvalidStrategy();
         if (_newStrategy == address(strategy)) revert Errors.InvalidStrategy();
 
@@ -162,11 +168,15 @@ contract Vault is ERC4626, ReentrancyGuard {
     }
 
     /**
-     * @notice Transfer ownership of the vault
+     * @notice Transfer ownership of the vault (grants all admin roles to new owner)
      * @param newOwner New owner address
      */
-    function transferMarketOwnership(address newOwner) external onlyMarketOwner {
+    function transferMarketOwnership(address newOwner) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newOwner == address(0)) revert Errors.InvalidNewOwner();
+
+        // Grant roles to new owner
+        _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
+        _grantRole(ProtocolRoles.STRATEGY_MANAGER_ROLE, newOwner);
 
         address oldOwner = marketOwner;
         marketOwner = newOwner;

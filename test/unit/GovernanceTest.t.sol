@@ -4,11 +4,14 @@ pragma solidity ^0.8.30;
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/access/IAccessControl.sol";
 import "../../src/core/MarketV1.sol";
 import "../../src/governance/GovernanceSetup.sol";
 import "../../src/core/Vault.sol";
 import "../../src/core/PriceOracle.sol";
+import "../../src/core/OracleRouter.sol";
 import "../../src/core/InterestRateModel.sol";
+import "../../src/access/ProtocolAccessControl.sol";
 import "../Mocks.sol";
 
 /**
@@ -23,6 +26,7 @@ contract GovernanceTest is Test {
     MarketTimelock public timelock;
     Vault public vault;
     PriceOracle public oracle;
+    OracleRouter public oracleRouter;
     InterestRateModel public irm;
     MockStrategy public strategy;
 
@@ -63,28 +67,34 @@ contract GovernanceTest is Test {
         usdcFeed = new MockPriceFeed(1e8);
         wethFeed = new MockPriceFeed(2000e8);
 
-        // Deploy oracle
+        // Deploy oracle and OracleRouter
         oracle = new PriceOracle(deployer);
+        oracleRouter = new OracleRouter(address(oracle), deployer);
 
         // Deploy strategy
         strategy = new MockStrategy(usdc, "USDC Strategy", "sUSDC");
 
-        // Deploy vault
-        vault = new Vault(usdc, address(0), address(strategy), "Vault USDC", "vUSDC");
+        // Deploy vault (with deployer for AccessControl)
+        vault = new Vault(usdc, address(0), address(strategy), deployer, "Vault USDC", "vUSDC");
 
-        // Deploy IRM
-        irm = new InterestRateModel(0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0));
+        // Deploy IRM (with deployer for AccessControl)
+        irm = new InterestRateModel(0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), deployer);
 
         // Deploy MarketV1 implementation
         implementation = new MarketV1();
 
-        // Deploy proxy with deployer as initial owner
+        // Add ALL price feeds before transferring ownership to OracleRouter
+        oracle.addPriceFeed(address(usdc), address(usdcFeed));
+        oracle.addPriceFeed(address(weth), address(wethFeed));
+        oracle.transferOwnership(address(oracleRouter));
+
+        // Deploy proxy with deployer as initial owner (using OracleRouter)
         bytes memory initData = abi.encodeWithSelector(
             MarketV1.initialize.selector,
             badDebtAddr,
             treasury,
             address(vault),
-            address(oracle),
+            address(oracleRouter),
             address(irm),
             address(usdc),
             deployer
@@ -95,10 +105,6 @@ contract GovernanceTest is Test {
         // Link contracts
         vault.setMarket(address(market));
         irm.setMarketContract(address(market));
-
-        // Add loan asset price feed
-        oracle.addPriceFeed(address(usdc), address(usdcFeed));
-        oracle.transferOwnership(address(market));
 
         // Set market parameters
         market.setMarketParameters(0.85e18, 0.05e18, 0.1e18);
@@ -233,7 +239,7 @@ contract GovernanceTest is Test {
 
     function testNonGuardianCannotPause() public {
         vm.prank(alice);
-        vm.expectRevert(Errors.OnlyOwner.selector);
+        vm.expectRevert("ProtocolAccessControl: missing role");
         market.setBorrowingPaused(true);
     }
 
@@ -253,13 +259,19 @@ contract GovernanceTest is Test {
         market.setBorrowingPaused(false); // Owner unpauses
 
         vm.prank(guardianSigner);
-        vm.expectRevert(Errors.OnlyOwner.selector);
+        vm.expectRevert("ProtocolAccessControl: missing role");
         market.setBorrowingPaused(true);
     }
 
     function testOnlyOwnerCanSetGuardian() public {
         vm.prank(alice);
-        vm.expectRevert(Errors.OnlyOwner.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                alice,
+                ProtocolRoles.MARKET_ADMIN_ROLE
+            )
+        );
         market.setGuardian(alice);
     }
 
@@ -270,7 +282,7 @@ contract GovernanceTest is Test {
 
         // Previous guardian cannot pause
         vm.prank(guardianSigner);
-        vm.expectRevert(Errors.OnlyOwner.selector);
+        vm.expectRevert("ProtocolAccessControl: missing role");
         market.setBorrowingPaused(true);
     }
 

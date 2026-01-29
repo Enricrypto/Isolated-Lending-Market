@@ -5,20 +5,22 @@ import "./Vault.sol";
 import "./MarketV1.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
+import "../access/ProtocolAccessControl.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title InterestRateModel
  * @notice Implements a Jump Rate Model for dynamic interest rates
- * @dev Interest rate increases gradually until optimal utilization, then jumps steeply
+ * @dev Interest rate increases gradually until optimal utilization, then jumps steeply.
+ *      Uses AccessControl for role-based permissions (RATE_MANAGER_ROLE).
  * @author Your Team
  *
  * Formula:
  * - If utilization < optimal: rate = baseRate + (utilization * slope1)
  * - If utilization >= optimal: rate = baseRate + (optimal * slope1) + ((utilization - optimal) * slope2)
  */
-contract InterestRateModel {
+contract InterestRateModel is ProtocolAccessControl {
     using Math for uint256;
 
     // ==================== STATE VARIABLES ====================
@@ -35,8 +37,8 @@ contract InterestRateModel {
     /// @notice Slope of interest rate above optimal utilization (steep)
     uint256 public slope2;
 
-    /// @notice Contract owner
-    address public immutable owner;
+    /// @notice Legacy owner variable (deprecated, use AccessControl roles)
+    address public owner;
 
     /// @notice Reference to vault contract
     Vault public immutable vaultContract;
@@ -68,9 +70,11 @@ contract InterestRateModel {
         uint256 _slope1,
         uint256 _slope2,
         address _vaultContract,
-        address _marketContract
+        address _marketContract,
+        address _owner
     ) {
         if (_vaultContract == address(0)) revert Errors.ZeroAddress();
+        if (_owner == address(0)) revert Errors.ZeroAddress();
 
         // Validate parameters
         _validateParameters(_baseRate, _optimalUtilization, _slope1, _slope2);
@@ -85,15 +89,14 @@ contract InterestRateModel {
             marketContract = MarketV1(_marketContract);
         }
 
-        owner = msg.sender;
+        // Initialize AccessControl
+        _initializeAccessControl(_owner);
+        _grantRole(ProtocolRoles.RATE_MANAGER_ROLE, _owner);
+
+        owner = _owner;
     }
 
-    // ==================== MODIFIERS ====================
-
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert Errors.OnlyOwner();
-        _;
-    }
+    // Note: Role-based modifiers inherited from ProtocolAccessControl
 
     // ==================== ADMIN FUNCTIONS ====================
 
@@ -101,7 +104,7 @@ contract InterestRateModel {
      * @notice Set the market contract address
      * @param _market Address of market contract
      */
-    function setMarketContract(address _market) external onlyOwner {
+    function setMarketContract(address _market) external onlyRateManager {
         if (address(marketContract) != address(0)) revert Errors.MarketAlreadySet();
         if (_market == address(0)) revert Errors.InvalidMarketAddress();
 
@@ -119,7 +122,7 @@ contract InterestRateModel {
      * @notice Update base rate
      * @param _newBaseRate New base rate
      */
-    function setBaseRate(uint256 _newBaseRate) external onlyOwner {
+    function setBaseRate(uint256 _newBaseRate) external onlyRateManager {
         if (_newBaseRate > MAX_BASE_RATE) revert Errors.InvalidBaseRate();
 
         uint256 oldRate = baseRate;
@@ -132,7 +135,7 @@ contract InterestRateModel {
      * @notice Update optimal utilization
      * @param _newOptimalUtilization New optimal utilization
      */
-    function setOptimalUtilization(uint256 _newOptimalUtilization) external onlyOwner {
+    function setOptimalUtilization(uint256 _newOptimalUtilization) external onlyRateManager {
         if (_newOptimalUtilization == 0 || _newOptimalUtilization > PRECISION) {
             revert Errors.InvalidOptimalUtilization();
         }
@@ -147,7 +150,7 @@ contract InterestRateModel {
      * @notice Update slope1
      * @param _newSlope1 New slope1
      */
-    function setSlope1(uint256 _newSlope1) external onlyOwner {
+    function setSlope1(uint256 _newSlope1) external onlyRateManager {
         if (_newSlope1 > MAX_SLOPE) revert Errors.InvalidSlope();
 
         // Verify new parameters don't create excessive rates
@@ -164,13 +167,26 @@ contract InterestRateModel {
      * @notice Update slope2
      * @param _newSlope2 New slope2
      */
-    function setSlope2(uint256 _newSlope2) external onlyOwner {
+    function setSlope2(uint256 _newSlope2) external onlyRateManager {
         if (_newSlope2 > MAX_SLOPE) revert Errors.InvalidSlope();
 
         uint256 oldSlope = slope2;
         slope2 = _newSlope2;
 
         emit Events.Slope2Updated(oldSlope, _newSlope2);
+    }
+
+    /**
+     * @notice Transfer ownership (grants all admin roles to new owner)
+     * @param newOwner The new owner address
+     */
+    function transferOwnership(address newOwner) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newOwner == address(0)) revert Errors.ZeroAddress();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
+        _grantRole(ProtocolRoles.RATE_MANAGER_ROLE, newOwner);
+
+        owner = newOwner;
     }
 
     // ==================== VIEW FUNCTIONS ====================

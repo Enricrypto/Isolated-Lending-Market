@@ -9,7 +9,11 @@ import "../src/core/Vault.sol";
 import "../src/core/PriceOracle.sol";
 import "../src/core/InterestRateModel.sol";
 import "../src/core/MarketV1.sol";
+import "../src/core/OracleRouter.sol";
+import "../src/core/RiskEngine.sol";
 import "../src/governance/GovernanceSetup.sol";
+import "../src/governance/RiskProposer.sol";
+import "../src/access/ProtocolAccessControl.sol";
 
 /**
  * @title DeployAll
@@ -19,13 +23,15 @@ import "../src/governance/GovernanceSetup.sol";
  * 1. Mock tokens (USDC, WETH, WBTC)
  * 2. Mock price feeds
  * 3. Mock strategy
- * 4. PriceOracle
- * 5. Vault
- * 6. InterestRateModel
- * 7. MarketV1 implementation
- * 8. ERC1967Proxy (Market)
- * 9. Links + configuration
- * 10. Timelock + governance handoff
+ * 4. PriceOracle (underlying Chainlink wrapper)
+ * 5. OracleRouter (hierarchical oracle: Chainlink → TWAP → LKG fallback)
+ * 6. Vault
+ * 7. InterestRateModel
+ * 8. MarketV1 implementation
+ * 9. ERC1967Proxy (Market with OracleRouter)
+ * 10. Links + configuration
+ * 11. Timelock + governance handoff
+ * 12. RiskEngine
  *
  * OUTPUT:
  * - Fully populated .env-ready address block
@@ -71,6 +77,10 @@ contract DeployAll is Script {
         address implementation;
         address proxy;
         address timelock;
+        address oracleRouter;
+        address riskEngine;
+        address emergencyGuardian;
+        address riskProposer;
     }
 
     function run() external {
@@ -99,57 +109,118 @@ contract DeployAll is Script {
         // 3. Deploy mock strategy
         d.strategy = address(new MockStrategy(MockERC20(d.usdc), "USDC Strategy", "sUSDC"));
 
-        // 4. Deploy oracle
+        // 4. Deploy PriceOracle (underlying Chainlink wrapper)
         d.oracle = address(new PriceOracle(deployer));
 
-        // 5. Deploy vault
+        // 5. Deploy OracleRouter wrapping PriceOracle
+        OracleRouter oracleRouter = new OracleRouter(d.oracle, deployer);
+        oracleRouter.setOracleParams(0.02e18, 0.05e18, 1800, 86400);
+        d.oracleRouter = address(oracleRouter);
+
+        // 6. Add ALL price feeds before transferring PriceOracle ownership
+        PriceOracle(d.oracle).addPriceFeed(d.usdc, d.usdcFeed);
+        PriceOracle(d.oracle).addPriceFeed(d.weth, d.wethFeed);
+        PriceOracle(d.oracle).addPriceFeed(d.wbtc, d.wbtcFeed);
+
+        // 7. Transfer PriceOracle ownership to OracleRouter
+        // Future feeds must be added via OracleRouter.addPriceFeed (requires OracleRouter owner)
+        PriceOracle(d.oracle).transferOwnership(d.oracleRouter);
+
+        // 8. Deploy vault (with deployer as initial owner for role-based access control)
         d.vault = address(
-            new Vault(IERC20(d.usdc), address(0), d.strategy, VAULT_NAME, VAULT_SYMBOL)
+            new Vault(IERC20(d.usdc), address(0), d.strategy, deployer, VAULT_NAME, VAULT_SYMBOL)
         );
 
-        // 6. Deploy IRM
+        // 9. Deploy IRM (with deployer as initial owner for role-based access control)
         d.irm = address(
-            new InterestRateModel(BASE_RATE, OPTIMAL_UTILIZATION, SLOPE1, SLOPE2, d.vault, address(0))
+            new InterestRateModel(BASE_RATE, OPTIMAL_UTILIZATION, SLOPE1, SLOPE2, d.vault, address(0), deployer)
         );
 
-        // 7. Deploy market implementation
+        // 10. Deploy market implementation
         d.implementation = address(new MarketV1());
 
-        // 8. Deploy market proxy
+        // 11. Deploy market proxy (with OracleRouter, not PriceOracle)
         bytes memory initData = abi.encodeWithSelector(
             MarketV1.initialize.selector,
             badDebt,
             treasury,
             d.vault,
-            d.oracle,
+            d.oracleRouter, // Use OracleRouter instead of PriceOracle
             d.irm,
             d.usdc,
             deployer
         );
         d.proxy = address(new ERC1967Proxy(d.implementation, initData));
 
-        // 9. Link contracts
+        // 12. Link contracts
         Vault(d.vault).setMarket(d.proxy);
         InterestRateModel(d.irm).setMarketContract(d.proxy);
 
-        // 10. Configure oracle + market
-        // Only add USDC feed manually (loan asset)
-        // WETH/WBTC feeds are added via addCollateralToken
-        PriceOracle(d.oracle).addPriceFeed(d.usdc, d.usdcFeed);
-        PriceOracle(d.oracle).transferOwnership(d.proxy);
-
+        // 13. Configure market
         MarketV1 market = MarketV1(d.proxy);
         market.setMarketParameters(LLTV, LIQUIDATION_PENALTY, PROTOCOL_FEE_RATE);
+        // Price feeds already registered, just enable collateral tokens
         market.addCollateralToken(d.weth, d.wethFeed);
         market.addCollateralToken(d.wbtc, d.wbtcFeed);
 
-        // 11. Deploy timelock + governance handoff
+        // 14. Deploy RiskEngine (before timelock, as deployer needs to be owner initially)
+        DataTypes.RiskEngineConfig memory riskConfig = DataTypes.RiskEngineConfig({
+            oracleFreshnessThreshold: 3600,
+            oracleDeviationTolerance: 0.02e18,
+            oracleCriticalDeviation: 0.05e18,
+            lkgDecayHalfLife: 1800,
+            lkgMaxAge: 86400,
+            utilizationWarning: 0.85e18,
+            utilizationCritical: 0.95e18,
+            healthFactorWarning: 1.2e18,
+            healthFactorCritical: 1.05e18,
+            badDebtThreshold: 0.01e18,
+            strategyAllocationCap: 0.95e18
+        });
+        d.riskEngine = address(
+            new RiskEngine(d.proxy, d.vault, d.oracleRouter, d.irm, deployer, riskConfig)
+        );
+
+        // 15. Deploy timelock (proposers: multisig, executors: multisig)
         address[] memory proposers = _toArray(multisig);
         address[] memory executors = _toArray(multisig);
         d.timelock = address(new MarketTimelock(TIMELOCK_DELAY, proposers, executors));
 
-        market.setGuardian(guardian);
+        // 16. Deploy EmergencyGuardian (can pause market instantly)
+        d.emergencyGuardian = address(new EmergencyGuardian(d.proxy, guardian));
+
+        // 17. Deploy RiskProposer (auto-creates proposals when severity >= 2)
+        d.riskProposer = address(
+            new RiskProposer(
+                d.riskEngine,
+                payable(d.timelock),
+                d.proxy,
+                2, // Severity threshold
+                1 hours // Cooldown period
+            )
+        );
+
+        // 18. Grant PROPOSER_ROLE to RiskProposer on Timelock
+        MarketTimelock(payable(d.timelock)).grantRole(
+            MarketTimelock(payable(d.timelock)).PROPOSER_ROLE(),
+            d.riskProposer
+        );
+
+        // 19. Set guardian and transfer Market ownership to Timelock
+        market.setGuardian(d.emergencyGuardian);
         market.transferOwnership(d.timelock);
+
+        // 20. Transfer ownership of other contracts to Timelock
+        // Note: In production, each contract should have its ownership transferred
+        // For simplicity, we transfer to timelock which can then manage roles
+        OracleRouter(d.oracleRouter).transferOwnership(d.timelock);
+        InterestRateModel(d.irm).transferOwnership(d.timelock);
+        Vault(d.vault).transferMarketOwnership(d.timelock);
+        RiskEngine(d.riskEngine).transferOwnership(d.timelock);
+
+        // 21. Revoke deployer's admin roles (final step - deployer no longer has access)
+        // This should be done via Timelock after verifying deployment is correct
+        // For testnet, we leave deployer with access for easier testing
 
         vm.stopBroadcast();
 
@@ -187,6 +258,10 @@ contract DeployAll is Script {
         console.log("MARKET_IMPLEMENTATION=", d.implementation);
         console.log("MARKET_PROXY=", d.proxy);
         console.log("TIMELOCK_ADDRESS=", d.timelock);
+        console.log("ORACLE_ROUTER=", d.oracleRouter);
+        console.log("RISK_ENGINE=", d.riskEngine);
+        console.log("EMERGENCY_GUARDIAN=", d.emergencyGuardian);
+        console.log("RISK_PROPOSER=", d.riskProposer);
         console.log("=======================================================\n");
     }
 }

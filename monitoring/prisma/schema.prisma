@@ -1,0 +1,45 @@
+// Prisma schema for the monitoring dashboard
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model MetricSnapshot {
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime @default(now())
+
+  // Liquidity Depth
+  availableLiquidity  Decimal @db.Decimal(78, 0)
+  totalBorrows        Decimal @db.Decimal(78, 0)
+  liquidityDepthRatio Decimal @db.Decimal(18, 6)
+  liquiditySeverity   Int
+
+  // Borrow Cost / APR Convexity
+  utilizationRate      Decimal @db.Decimal(18, 6)
+  borrowRate           Decimal @db.Decimal(18, 6)
+  optimalUtilization   Decimal @db.Decimal(18, 6)
+  distanceToKink       Decimal @db.Decimal(18, 6)
+  aprConvexitySeverity Int
+
+  // Oracle Deviations
+  oraclePrice      Decimal @db.Decimal(78, 0)
+  oracleConfidence Int
+  oracleRiskScore  Int
+  oracleIsStale    Boolean
+  oracleSeverity   Int
+
+  // Utilization Velocity (computed from deltas)
+  utilizationDelta Decimal? @db.Decimal(18, 6)
+  velocitySeverity Int?
+
+  // Overall
+  overallSeverity Int
+
+  @@index([timestamp])
+}

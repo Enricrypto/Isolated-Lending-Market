@@ -70,4 +70,16 @@ library Errors {
     error LiquidationPenaltyTooHigh();
     error InvalidAmount();
     error ZeroAddress();
+
+    // ==================== RISK ENGINE ERRORS ====================
+    error RiskEngineNotConfigured();
+    error InvalidRiskThreshold();
+    error TWAPOracleNotSet();
+    error LKGPriceExpired();
+    error InvalidConfidenceValue();
+    error AssetNotRegistered();
+    error InvalidSeverityLevel();
+    error OracleRouterNotSet();
+    error InvalidHalfLife();
+    error InvalidMaxAge();
 }

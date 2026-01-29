@@ -86,18 +86,19 @@ contract DeployUpgradeableMarket is Script {
         oracle = new PriceOracle(deployer);
         console.log("   PriceOracle:", address(oracle));
 
-        // 2. Deploy Vault
+        // 2. Deploy Vault (with deployer as owner for AccessControl)
         console.log("2. Deploying Vault...");
         vault = new Vault(
             IERC20(loanAsset),
             address(0), // Market will be set later
             strategyVault,
+            deployer, // Owner for AccessControl
             VAULT_NAME,
             VAULT_SYMBOL
         );
         console.log("   Vault:", address(vault));
 
-        // 3. Deploy Interest Rate Model
+        // 3. Deploy Interest Rate Model (with deployer as owner for AccessControl)
         console.log("3. Deploying InterestRateModel...");
         interestRateModel = new InterestRateModel(
             BASE_RATE,
@@ -105,7 +106,8 @@ contract DeployUpgradeableMarket is Script {
             SLOPE1,
             SLOPE2,
             address(vault),
-            address(0) // Market will be set later
+            address(0), // Market will be set later
+            deployer // Owner for AccessControl
         );
         console.log("   InterestRateModel:", address(interestRateModel));
 

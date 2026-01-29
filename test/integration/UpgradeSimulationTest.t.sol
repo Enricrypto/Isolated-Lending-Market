@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "../../src/core/MarketV1.sol";
 import "../../src/core/Vault.sol";
 import "../../src/core/PriceOracle.sol";
+import "../../src/core/OracleRouter.sol";
 import "../../src/core/InterestRateModel.sol";
 import "../../src/governance/GovernanceSetup.sol";
 import "../Mocks.sol";
@@ -24,6 +25,7 @@ contract UpgradeSimulationTest is Test {
     MarketTimelock public timelock;
     Vault public vault;
     PriceOracle public oracle;
+    OracleRouter public oracleRouter;
     InterestRateModel public irm;
     MockStrategy public strategy;
 
@@ -77,26 +79,33 @@ contract UpgradeSimulationTest is Test {
         wethFeed = new MockPriceFeed(2000e8); // $2000
         wbtcFeed = new MockPriceFeed(50_000e8); // $50000
 
-        // Deploy oracle
+        // Deploy oracle and OracleRouter
         oracle = new PriceOracle(deployer);
+        oracleRouter = new OracleRouter(address(oracle), deployer);
 
         // Deploy strategy
         strategy = new MockStrategy(usdc, "USDC Strategy", "sUSDC");
 
-        // Deploy vault
-        vault = new Vault(usdc, address(0), address(strategy), "Vault USDC", "vUSDC");
+        // Deploy vault (with deployer for AccessControl)
+        vault = new Vault(usdc, address(0), address(strategy), deployer, "Vault USDC", "vUSDC");
 
-        // Deploy IRM
-        irm = new InterestRateModel(0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0));
+        // Deploy IRM (with deployer for AccessControl)
+        irm = new InterestRateModel(0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), deployer);
 
-        // Deploy MarketV1 with proxy
+        // Add ALL price feeds before transferring ownership to OracleRouter
+        oracle.addPriceFeed(address(usdc), address(usdcFeed));
+        oracle.addPriceFeed(address(weth), address(wethFeed));
+        oracle.addPriceFeed(address(wbtc), address(wbtcFeed));
+        oracle.transferOwnership(address(oracleRouter));
+
+        // Deploy MarketV1 with proxy (using OracleRouter)
         implementation = new MarketV1();
         bytes memory initData = abi.encodeWithSelector(
             MarketV1.initialize.selector,
             badDebtAddr,
             treasury,
             address(vault),
-            address(oracle),
+            address(oracleRouter),
             address(irm),
             address(usdc),
             deployer
@@ -107,10 +116,6 @@ contract UpgradeSimulationTest is Test {
         // Link contracts
         vault.setMarket(address(market));
         irm.setMarketContract(address(market));
-
-        // Setup oracle
-        oracle.addPriceFeed(address(usdc), address(usdcFeed));
-        oracle.transferOwnership(address(market));
 
         // Set market parameters
         market.setMarketParameters(0.85e18, 0.05e18, 0.1e18);

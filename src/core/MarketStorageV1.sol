@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import "@openzeppelin/contracts/interfaces/IERC20.sol";
 import "./Vault.sol";
-import "./PriceOracle.sol";
+import "./OracleRouter.sol";
 import "./InterestRateModel.sol";
 import "../libraries/DataTypes.sol";
 
@@ -46,9 +46,9 @@ abstract contract MarketStorageV1 {
     /// @dev Slot 3
     Vault public vaultContract;
 
-    /// @notice Price oracle for asset valuation (Chainlink-based)
+    /// @notice Oracle router for asset valuation (hierarchical: Chainlink → TWAP → LKG)
     /// @dev Slot 4
-    PriceOracle public priceOracle;
+    OracleRouter public oracleRouter;
 
     /// @notice Interest rate model for borrow rate calculation
     /// @dev Slot 5

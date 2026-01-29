@@ -3,10 +3,13 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "@openzeppelin/contracts/access/IAccessControl.sol";
 import "../../src/core/MarketV1.sol";
 import "../../src/core/Vault.sol";
 import "../../src/core/PriceOracle.sol";
+import "../../src/core/OracleRouter.sol";
 import "../../src/core/InterestRateModel.sol";
+import "../../src/access/ProtocolAccessControl.sol";
 import "../Mocks.sol";
 
 /**
@@ -21,6 +24,7 @@ contract MarketV1Test is Test {
     ERC1967Proxy public proxy;
     Vault public vault;
     PriceOracle public oracle;
+    OracleRouter public oracleRouter;
     InterestRateModel public irm;
     MockStrategy public strategy;
 
@@ -59,41 +63,44 @@ contract MarketV1Test is Test {
         usdcFeed = new MockPriceFeed(1e8); // $1.00
         wethFeed = new MockPriceFeed(2000e8); // $2000
 
-        // Deploy oracle (price feeds added later via market.addCollateralToken)
+        // Deploy oracle and OracleRouter
         oracle = new PriceOracle(address(this));
+        oracleRouter = new OracleRouter(address(oracle), address(this));
 
         // Deploy strategy (mock ERC4626)
         strategy = new MockStrategy(usdc, "USDC Strategy", "sUSDC");
 
-        // Deploy vault
+        // Deploy vault (with address(this) as owner)
         vault = new Vault(
             usdc,
             address(0), // Market set later
             address(strategy),
+            address(this), // Owner for AccessControl
             "Vault USDC",
             "vUSDC"
         );
 
-        // Deploy interest rate model
+        // Deploy interest rate model (with address(this) as owner)
         irm = new InterestRateModel(
             0.02e18, // 2% base rate
             0.8e18, // 80% optimal utilization
             0.04e18, // 4% slope1
             0.6e18, // 60% slope2
             address(vault),
-            address(0) // Market set later
+            address(0), // Market set later
+            address(this) // Owner for AccessControl
         );
 
         // Deploy MarketV1 implementation
         implementation = new MarketV1();
 
-        // Prepare initialization data
+        // Prepare initialization data (using OracleRouter, not PriceOracle)
         bytes memory initData = abi.encodeWithSelector(
             MarketV1.initialize.selector,
             badDebtAddr,
             treasury,
             address(vault),
-            address(oracle),
+            address(oracleRouter),
             address(irm),
             address(usdc),
             owner
@@ -109,11 +116,12 @@ contract MarketV1Test is Test {
         vault.setMarket(address(market));
         irm.setMarketContract(address(market));
 
-        // Add loan asset price feed (needed for debt calculations)
+        // Add ALL price feeds BEFORE transferring PriceOracle ownership to OracleRouter
         oracle.addPriceFeed(address(usdc), address(usdcFeed));
+        oracle.addPriceFeed(address(weth), address(wethFeed));
 
-        // Transfer oracle ownership to market
-        oracle.transferOwnership(address(market));
+        // Transfer PriceOracle ownership to OracleRouter
+        oracle.transferOwnership(address(oracleRouter));
 
         // Set market parameters
         market.setMarketParameters(
@@ -122,7 +130,7 @@ contract MarketV1Test is Test {
             0.1e18 // 10% protocol fee
         );
 
-        // Add WETH as collateral
+        // Add WETH as collateral (feed already registered in OracleRouter)
         market.addCollateralToken(address(weth), address(wethFeed));
 
         // Fund test accounts
@@ -144,7 +152,7 @@ contract MarketV1Test is Test {
         assertEq(market.protocolTreasury(), treasury);
         assertEq(market.badDebtAddress(), badDebtAddr);
         assertEq(address(market.vaultContract()), address(vault));
-        assertEq(address(market.priceOracle()), address(oracle));
+        assertEq(address(market.oracleRouter()), address(oracleRouter));
         assertEq(address(market.interestRateModel()), address(irm));
         assertEq(address(market.loanAsset()), address(usdc));
         assertEq(market.globalBorrowIndex(), 1e18);
@@ -219,7 +227,13 @@ contract MarketV1Test is Test {
         address newOwner = makeAddr("newOwner");
 
         vm.prank(alice);
-        vm.expectRevert(Errors.OnlyOwner.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                alice,
+                0x00 // DEFAULT_ADMIN_ROLE
+            )
+        );
         market.transferOwnership(newOwner);
     }
 
@@ -235,7 +249,13 @@ contract MarketV1Test is Test {
         MarketV1 newImplementation = new MarketV1();
 
         vm.prank(alice);
-        vm.expectRevert(Errors.OnlyOwner.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                alice,
+                ProtocolRoles.UPGRADER_ROLE
+            )
+        );
         market.upgradeToAndCall(address(newImplementation), "");
     }
 
@@ -402,7 +422,7 @@ contract MarketV1Test is Test {
 
     function testOnlyOwnerCanPause() public {
         vm.prank(alice);
-        vm.expectRevert(Errors.OnlyOwner.selector);
+        vm.expectRevert("ProtocolAccessControl: missing role");
         market.setBorrowingPaused(true);
     }
 

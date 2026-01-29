@@ -8,12 +8,13 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "./Vault.sol";
-import "./PriceOracle.sol";
+import "./OracleRouter.sol";
 import "./InterestRateModel.sol";
 import "./MarketStorageV1.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
 import "../libraries/DataTypes.sol";
+import "../access/ProtocolAccessControlUpgradeable.sol";
 
 /**
  * @title MarketV1
@@ -32,7 +33,7 @@ import "../libraries/DataTypes.sol";
  *
  * Architecture:
  * - Uses ERC-4626 vault for liquidity management
- * - Integrates with Chainlink for price oracles
+ * - Integrates with OracleRouter for hierarchical price feeds (Chainlink → TWAP → LKG)
  * - Tracks global borrow index for interest accrual
  * - Normalizes all internal accounting to 18 decimals
  *
@@ -45,7 +46,13 @@ import "../libraries/DataTypes.sol";
  * - Storage layout preserved via MarketStorageV1 inheritance
  * - Future upgrades must maintain storage compatibility
  */
-contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgradeable {
+contract MarketV1 is
+    Initializable,
+    MarketStorageV1,
+    ReentrancyGuard,
+    UUPSUpgradeable,
+    ProtocolAccessControlUpgradeable
+{
     using Math for uint256;
 
     // ==================== CONSTANTS ====================
@@ -69,7 +76,7 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
      * @param _badDebtAddress Address to accumulate bad debt
      * @param _protocolTreasury Address to receive protocol fees
      * @param _vaultContract Vault contract address
-     * @param _priceOracle Price oracle address
+     * @param _oracleRouter Oracle router address (hierarchical: Chainlink → TWAP → LKG)
      * @param _interestRateModel Interest rate model address
      * @param _loanAsset Loan asset address (e.g., USDC)
      * @param _owner Initial owner address
@@ -79,7 +86,7 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
         address _badDebtAddress,
         address _protocolTreasury,
         address _vaultContract,
-        address _priceOracle,
+        address _oracleRouter,
         address _interestRateModel,
         address _loanAsset,
         address _owner
@@ -88,7 +95,7 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
         if (_badDebtAddress == address(0)) revert Errors.InvalidBadDebtAddress();
         if (_protocolTreasury == address(0)) revert Errors.InvalidTreasuryAddress();
         if (_vaultContract == address(0)) revert Errors.ZeroAddress();
-        if (_priceOracle == address(0)) revert Errors.ZeroAddress();
+        if (_oracleRouter == address(0)) revert Errors.ZeroAddress();
         if (_interestRateModel == address(0)) revert Errors.ZeroAddress();
         if (_loanAsset == address(0)) revert Errors.InvalidTokenAddress();
         if (_owner == address(0)) revert Errors.ZeroAddress();
@@ -96,14 +103,21 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
         // Note: In OZ v5, ReentrancyGuard uses transient storage and
         // UUPSUpgradeable doesn't require initialization
 
+        // Initialize AccessControl with owner as admin
+        __ProtocolAccessControl_init(_owner);
+
+        // Grant initial roles to owner (typically deployer, then transferred to Timelock)
+        _grantRole(ProtocolRoles.MARKET_ADMIN_ROLE, _owner);
+        _grantRole(ProtocolRoles.UPGRADER_ROLE, _owner);
+
         // Initialize storage variables (inherited from MarketStorageV1)
         badDebtAddress = _badDebtAddress;
         protocolTreasury = _protocolTreasury;
         vaultContract = Vault(_vaultContract);
-        priceOracle = PriceOracle(_priceOracle);
+        oracleRouter = OracleRouter(_oracleRouter);
         interestRateModel = InterestRateModel(_interestRateModel);
         loanAsset = IERC20(_loanAsset);
-        owner = _owner;
+        owner = _owner; // Keep for storage compatibility (deprecated, use AccessControl roles)
 
         // Initialize borrow index to PRECISION (1e18)
         globalBorrowIndex = PRECISION;
@@ -114,15 +128,11 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
 
     // ==================== MODIFIERS ====================
 
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert Errors.OnlyOwner();
-        _;
-    }
-
-    modifier onlyOwnerOrGuardian() {
-        if (msg.sender != owner && msg.sender != guardian) revert Errors.OnlyOwner();
-        _;
-    }
+    // Note: Role-based modifiers are inherited from ProtocolAccessControlUpgradeable:
+    // - onlyMarketAdmin: for market parameter management
+    // - onlyGuardian: for emergency pause
+    // - onlyMarketAdminOrGuardian: for pause operations
+    // - onlyUpgrader: for contract upgrades
 
     /**
      * @notice Modifier to prevent borrowing when paused
@@ -147,22 +157,56 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
     /**
      * @notice Authorize an upgrade to a new implementation
      * @param newImplementation Address of new implementation contract
-     * @dev Only owner can authorize upgrades
+     * @dev Only addresses with UPGRADER_ROLE can authorize upgrades
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner { }
+    function _authorizeUpgrade(address newImplementation) internal override onlyUpgrader { }
 
-    // ==================== OWNERSHIP ====================
+    // ==================== ROLE MANAGEMENT ====================
 
     /**
-     * @notice Transfer ownership to a new address
-     * @param newOwner Address of new owner
-     * @dev Used to transfer ownership to Timelock in governance setup
+     * @notice Transfer ownership to a new address (grants all admin roles)
+     * @param newOwner Address of new owner (typically Timelock)
+     * @dev This is a convenience function for governance transitions.
+     *      It grants DEFAULT_ADMIN_ROLE, MARKET_ADMIN_ROLE, and UPGRADER_ROLE to newOwner.
+     *      The caller must have DEFAULT_ADMIN_ROLE.
+     *      After calling this, the new owner should revoke roles from the old admin.
      */
-    function transferOwnership(address newOwner) external onlyOwner {
+    function transferOwnership(address newOwner) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newOwner == address(0)) revert Errors.ZeroAddress();
         address oldOwner = owner;
+
+        // Grant all admin roles to new owner
+        _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
+        _grantRole(ProtocolRoles.MARKET_ADMIN_ROLE, newOwner);
+        _grantRole(ProtocolRoles.UPGRADER_ROLE, newOwner);
+
+        // Update legacy storage variable
         owner = newOwner;
+
         emit Events.OwnershipTransferred(oldOwner, newOwner);
+    }
+
+    /**
+     * @notice Set the guardian address that can trigger emergency pause
+     * @param _guardian New guardian address
+     * @dev Guardian can only pause (not unpause). Grant GUARDIAN_ROLE to allow pause.
+     *      To disable guardian, set to address(0) and revoke their GUARDIAN_ROLE.
+     */
+    function setGuardian(address _guardian) external onlyMarketAdmin {
+        address oldGuardian = guardian;
+
+        // Revoke old guardian's role if exists
+        if (oldGuardian != address(0) && hasRole(ProtocolRoles.GUARDIAN_ROLE, oldGuardian)) {
+            _revokeRole(ProtocolRoles.GUARDIAN_ROLE, oldGuardian);
+        }
+
+        // Grant new guardian role
+        if (_guardian != address(0)) {
+            _grantRole(ProtocolRoles.GUARDIAN_ROLE, _guardian);
+        }
+
+        guardian = _guardian;
+        emit Events.GuardianChanged(oldGuardian, _guardian);
     }
 
     // ==================== ADMIN FUNCTIONS ====================
@@ -177,7 +221,7 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
         uint256 _lltv,
         uint256 _liquidationPenalty,
         uint256 _protocolFeeRate
-    ) external onlyOwner {
+    ) external onlyMarketAdmin {
         if (_lltv == 0 || _lltv > PRECISION) {
             revert Errors.LiquidationLoanToValueTooHigh();
         }
@@ -194,9 +238,10 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
     /**
      * @notice Add a new supported collateral token
      * @param token Token address
-     * @param priceFeed Chainlink price feed address
+     * @param priceFeed Chainlink price feed address (for event only - must be pre-registered in OracleRouter)
+     * @dev Price feed must be registered via OracleRouter.addPriceFeed BEFORE calling this function
      */
-    function addCollateralToken(address token, address priceFeed) external onlyOwner {
+    function addCollateralToken(address token, address priceFeed) external onlyMarketAdmin {
         if (token == address(0)) revert Errors.InvalidTokenAddress();
         if (priceFeed == address(0)) revert Errors.InvalidPriceFeedAddress();
         if (supportedCollateralTokens[token]) revert Errors.TokenAlreadyAdded();
@@ -205,10 +250,10 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
         uint8 decimals = IERC20Metadata(token).decimals();
         if (decimals > TARGET_DECIMALS) revert Errors.TokenDecimalsTooHigh();
 
-        // Add price feed FIRST (reverts if invalid)
-        priceOracle.addPriceFeed(token, priceFeed);
+        // Validate price feed is already configured in OracleRouter
+        if (!oracleRouter.hasPriceFeed(token)) revert Errors.PriceFeedDoesNotExist();
 
-        // Then mark as supported
+        // Mark as supported
         tokenDecimals[token] = decimals;
         supportedCollateralTokens[token] = true;
 
@@ -220,7 +265,7 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
      * @param token Token address
      * @dev Existing collateral remains, new deposits blocked
      */
-    function pauseCollateralDeposits(address token) external onlyOwner {
+    function pauseCollateralDeposits(address token) external onlyMarketAdmin {
         if (!supportedCollateralTokens[token]) revert Errors.TokenNotSupported();
         if (depositsPaused[token]) revert Errors.DepositsPaused();
 
@@ -232,7 +277,7 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
      * @notice Resume deposits for a paused collateral token
      * @param token Token address
      */
-    function resumeCollateralDeposits(address token) external onlyOwner {
+    function resumeCollateralDeposits(address token) external onlyMarketAdmin {
         if (!supportedCollateralTokens[token]) revert Errors.TokenNotSupported();
         if (!depositsPaused[token]) revert Errors.DepositsNotPaused();
 
@@ -245,7 +290,7 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
      * @param token Token address
      * @dev Requires deposits to be paused and no remaining balance
      */
-    function removeCollateralToken(address token) external onlyOwner {
+    function removeCollateralToken(address token) external onlyMarketAdmin {
         if (!supportedCollateralTokens[token]) revert Errors.TokenNotSupported();
         if (!depositsPaused[token]) revert Errors.DepositsPaused();
         if (IERC20(token).balanceOf(address(this)) != 0) revert Errors.CollateralStillInUse();
@@ -263,21 +308,15 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
      *      - Borrowing is blocked
      *      - Deposits, withdrawals, repayments, and liquidations are ALLOWED
      *      - Users can always exit their positions
+     *      Guardian can pause but only MARKET_ADMIN_ROLE can unpause.
      */
-    function setBorrowingPaused(bool _paused) external onlyOwnerOrGuardian {
+    function setBorrowingPaused(bool _paused) external onlyMarketAdminOrGuardian {
+        // Guardian can only pause, not unpause
+        if (!_paused && !hasRole(ProtocolRoles.MARKET_ADMIN_ROLE, msg.sender)) {
+            revert Errors.OnlyOwner(); // Only admin can unpause
+        }
         paused = _paused;
         emit Events.BorrowingPausedChanged(_paused);
-    }
-
-    /**
-     * @notice Set the guardian address
-     * @param _guardian New guardian address (or address(0) to disable)
-     * @dev Guardian can only pause, not unpause or perform other actions
-     */
-    function setGuardian(address _guardian) external onlyOwner {
-        address oldGuardian = guardian;
-        guardian = _guardian;
-        emit Events.GuardianChanged(oldGuardian, _guardian);
     }
 
     // ==================== COLLATERAL MANAGEMENT ====================
@@ -643,7 +682,7 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
         uint256 usdAmount = usdToSeize > tokenValueUsd ? tokenValueUsd : usdToSeize;
 
         // Get token price (18 decimals)
-        uint256 price = priceOracle.getLatestPrice(token);
+        uint256 price = oracleRouter.getLatestPrice(token);
         if (price == 0) revert Errors.InvalidPrice();
 
         // Convert USD to token amount (normalized 18 decimals)
@@ -938,7 +977,7 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
      * @return Value in USD (18 decimals)
      */
     function _getTokenValueInUSD(address token, uint256 amount) internal view returns (uint256) {
-        uint256 price = priceOracle.getLatestPrice(token);
+        uint256 price = oracleRouter.getLatestPrice(token);
         return Math.mulDiv(amount, price, PRECISION);
     }
 
@@ -948,7 +987,7 @@ contract MarketV1 is Initializable, MarketStorageV1, ReentrancyGuard, UUPSUpgrad
      * @return Value in USD (18 decimals)
      */
     function _getLoanDebtInUSD(uint256 amount) internal view returns (uint256) {
-        uint256 price = priceOracle.getLatestPrice(address(loanAsset));
+        uint256 price = oracleRouter.getLatestPrice(address(loanAsset));
         return Math.mulDiv(amount, price, PRECISION);
     }
 

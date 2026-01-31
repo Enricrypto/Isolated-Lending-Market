@@ -1,0 +1,148 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #020410;
+  --foreground: #cbd5e1;
+}
+
+body {
+  font-family: "Inter", sans-serif;
+  background-color: #020410;
+  color: var(--foreground);
+}
+
+/* Custom Dot Pattern Background */
+.bg-grid-pattern {
+  background-image: radial-gradient(rgba(79, 70, 229, 0.15) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a1d42;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4f46e5;
+}
+
+/* Sparkline Animation */
+.sparkline path {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: dash 2.5s ease-out forwards;
+}
+@keyframes dash {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Glass Cards */
+.glass-panel {
+  background: rgba(11, 12, 36, 0.4);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(79, 70, 229, 0.15);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+.nav-item-active {
+  background: rgba(79, 70, 229, 0.15);
+  border: 1px solid rgba(79, 70, 229, 0.3);
+  color: #fff;
+  box-shadow: 0 0 15px rgba(79, 70, 229, 0.1);
+}
+
+/* Severity Badge Styles */
+.severity-normal {
+  @apply bg-emerald-500/10 text-emerald-400 border border-emerald-500/20;
+}
+
+.severity-elevated {
+  @apply bg-amber-500/10 text-amber-400 border border-amber-500/20;
+}
+
+.severity-critical {
+  @apply bg-orange-500/10 text-orange-400 border border-orange-500/20;
+}
+
+.severity-emergency {
+  @apply bg-red-500/10 text-red-400 border border-red-500/20;
+}
+
+/* Pulse animation for status dots */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 8px currentColor;
+  }
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 16px currentColor;
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Landing Page */
+.text-gradient {
+  background: linear-gradient(to right, #ffffff, #94a3b8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.logo-gradient {
+  background: linear-gradient(135deg, #F59E0B 0%, #14B8A6 50%, #6366F1 100%);
+}
+
+.bento-grid {
+  display: grid;
+  gap: 1px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bento-card {
+  background-color: #050714;
+  position: relative;
+  overflow: hidden;
+}
+
+.checkerboard {
+  background-image: linear-gradient(45deg, #0f172a 25%, transparent 25%),
+    linear-gradient(-45deg, #0f172a 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #0f172a 75%),
+    linear-gradient(-45deg, transparent 75%, #0f172a 75%);
+  background-size: 40px 40px;
+  background-position: 0 0, 0 20px, 20px -20px, -20px 0px;
+  opacity: 0.15;
+}
+
+.glow {
+  position: absolute;
+  width: 800px;
+  height: 800px;
+  background: radial-gradient(
+    circle,
+    rgba(99, 102, 241, 0.08) 0%,
+    rgba(0, 0, 0, 0) 60%
+  );
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  pointer-events: none;
+}

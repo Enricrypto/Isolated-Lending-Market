@@ -7,6 +7,17 @@ export interface SeverityInfo {
   color: string;
 }
 
+// Vault configuration for multi-vault polling
+export interface VaultConfig {
+  vaultAddress: `0x${string}`;
+  marketAddress: `0x${string}`;
+  irmAddress: `0x${string}`;
+  oracleRouterAddress: `0x${string}`;
+  strategyAddress: `0x${string}`;
+  loanAsset: `0x${string}`;
+  label: string;
+}
+
 // Liquidity Depth signal
 export interface LiquidityMetrics {
   availableLiquidity: bigint;
@@ -46,6 +57,8 @@ export interface VelocityMetrics {
 export interface MetricSnapshot {
   id?: number;
   timestamp: Date;
+  vaultAddress: string;
+  strategyAddress: string;
 
   // Liquidity
   availableLiquidity: bigint;
@@ -67,6 +80,11 @@ export interface MetricSnapshot {
   oracleIsStale: boolean;
   oracleSeverity: SeverityLevel;
 
+  // Strategy
+  strategyTotalAssets: bigint | null;
+  strategyAllocPct: number | null;
+  isStrategyChanging: boolean;
+
   // Velocity
   utilizationDelta: number | null;
   velocitySeverity: SeverityLevel | null;
@@ -77,6 +95,7 @@ export interface MetricSnapshot {
 
 // API response types
 export interface CurrentMetricsResponse {
+  vaultAddress: string;
   timestamp: string;
   liquidity: {
     available: string;
@@ -101,6 +120,11 @@ export interface CurrentMetricsResponse {
     delta: number | null;
     severity: SeverityLevel | null;
   };
+  strategy: {
+    totalAssets: string;
+    allocationPct: number;
+    isChanging: boolean;
+  } | null;
   overall: SeverityLevel;
 }
 
@@ -117,4 +141,4 @@ export interface HistoryResponse {
 }
 
 // Time range for queries
-export type TimeRange = "24h" | "7d" | "30d";
+export type TimeRange = "24h" | "7d" | "30d" | "90d";

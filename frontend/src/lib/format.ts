@@ -1,6 +1,6 @@
 /**
  * Format a raw BigInt string (with 6 decimals) into a human-readable number.
- * e.g. "1500000000000" -> "$1.50M"
+ * e.g. "1500000000000" -> "1.50M"
  */
 export function formatLargeNumber(value: string): string {
   const num = BigInt(value)
@@ -8,12 +8,12 @@ export function formatLargeNumber(value: string): string {
   const whole = num / divisor
 
   if (whole >= 1_000_000n) {
-    return `$${(Number(whole) / 1_000_000).toFixed(2)}M`
+    return `${(Number(whole) / 1_000_000).toFixed(2)}M`
   }
   if (whole >= 1_000n) {
-    return `$${(Number(whole) / 1_000).toFixed(2)}K`
+    return `${(Number(whole) / 1_000).toFixed(2)}K`
   }
-  return `$${whole.toString()}`
+  return whole.toString()
 }
 
 /**

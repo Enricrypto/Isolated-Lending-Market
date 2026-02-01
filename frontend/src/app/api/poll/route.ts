@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { pollAndStore } from "@/lib/polling"
+import { pollAndStore } from "@/lib/agents"
 import { cleanupOldSnapshots } from "@/lib/db"
 
 export const runtime = "nodejs"
@@ -19,24 +19,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Run the poll
-    const snapshot = await pollAndStore()
+    // Run the poll for all registered vaults
+    const snapshots = await pollAndStore()
 
-    if (!snapshot) {
+    if (!snapshots) {
       return NextResponse.json({
         skipped: true,
         reason: "Poll already in flight"
       })
     }
 
-    // Cleanup old snapshots (keep last 30 days)
+    // Cleanup old snapshots (keep last 90 days)
     const deletedCount = await cleanupOldSnapshots()
 
     return NextResponse.json({
       success: true,
-      snapshotId: snapshot.id,
-      timestamp: snapshot.timestamp.toISOString(),
-      overallSeverity: snapshot.overallSeverity,
+      vaultsPolled: snapshots.length,
+      snapshots: snapshots.map((s) => ({
+        id: s.id,
+        vaultAddress: s.vaultAddress,
+        timestamp: s.timestamp.toISOString(),
+        overallSeverity: s.overallSeverity,
+      })),
       deletedOldSnapshots: deletedCount
     })
   } catch (error) {

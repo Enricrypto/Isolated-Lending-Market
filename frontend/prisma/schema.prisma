@@ -13,6 +13,10 @@ model MetricSnapshot {
   id        Int      @id @default(autoincrement())
   timestamp DateTime @default(now())
 
+  // Multi-vault identification
+  vaultAddress    String @default("0xE8323c3d293f81C71232023367Bada21137C055E") @db.VarChar(42)
+  strategyAddress String @default("0x7FC70540Ab332e9Fa74E6808352df88Ffd2Bfe36") @db.VarChar(42)
+
   // Liquidity Depth
   availableLiquidity  Decimal @db.Decimal(78, 0)
   totalBorrows        Decimal @db.Decimal(78, 0)
@@ -33,6 +37,11 @@ model MetricSnapshot {
   oracleIsStale    Boolean
   oracleSeverity   Int
 
+  // Strategy Monitoring
+  strategyTotalAssets Decimal? @db.Decimal(78, 0)
+  strategyAllocPct   Decimal? @db.Decimal(18, 6)
+  isStrategyChanging Boolean  @default(false)
+
   // Utilization Velocity (computed from deltas)
   utilizationDelta Decimal? @db.Decimal(18, 6)
   velocitySeverity Int?
@@ -40,5 +49,6 @@ model MetricSnapshot {
   // Overall
   overallSeverity Int
 
-  @@index([timestamp])
+  @@index([timestamp, vaultAddress])
+  @@index([vaultAddress])
 }

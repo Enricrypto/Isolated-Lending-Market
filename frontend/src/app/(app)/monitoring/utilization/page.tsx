@@ -1,42 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Header } from "@/components/Header";
 import { SeverityBadge } from "@/components/SeverityBadge";
 import { TimeSeriesChart, TimeRangeSelector } from "@/components/TimeSeriesChart";
-import type { CurrentMetricsResponse, HistoryResponse, TimeRange, SeverityLevel } from "@/types/metrics";
+import { useMetrics } from "@/hooks/useMetrics";
+import type { TimeRange, SeverityLevel } from "@/types/metrics";
 import { RefreshCw, TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 export default function UtilizationPage() {
-  const [metrics, setMetrics] = useState<CurrentMetricsResponse | null>(null);
-  const [history, setHistory] = useState<HistoryResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [metricsRes, historyRes] = await Promise.all([
-          fetch("/api/metrics"),
-          fetch(`/api/history?signal=velocity&range=${timeRange}`),
-        ]);
-
-        if (metricsRes.ok) {
-          setMetrics(await metricsRes.json());
-        }
-        if (historyRes.ok) {
-          setHistory(await historyRes.json());
-        }
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [timeRange]);
+  const { metrics, history, loading } = useMetrics({ signal: "velocity", range: timeRange });
 
   if (loading) {
     return (

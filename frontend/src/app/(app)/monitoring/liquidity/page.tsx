@@ -47,13 +47,13 @@ export default function LiquidityPage() {
               <div>
                 <dt className="text-sm text-gray-500 dark:text-gray-400">Available Liquidity</dt>
                 <dd className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {formatLargeNumber(metrics.liquidity.available)}
+                  ${formatLargeNumber(metrics.liquidity.available)}
                 </dd>
               </div>
               <div>
                 <dt className="text-sm text-gray-500 dark:text-gray-400">Total Borrows</dt>
                 <dd className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {formatLargeNumber(metrics.liquidity.totalBorrows)}
+                  ${formatLargeNumber(metrics.liquidity.totalBorrows)}
                 </dd>
               </div>
             </dl>

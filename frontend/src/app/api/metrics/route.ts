@@ -1,14 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getLatestSnapshot } from "@/lib/db";
+import { DEFAULT_VAULT } from "@/lib/vault-registry";
 import type { CurrentMetricsResponse, SeverityLevel } from "@/types/metrics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const snapshot = await getLatestSnapshot();
+    const vaultAddress = request.nextUrl.searchParams.get("vault") || DEFAULT_VAULT.vaultAddress;
+    const snapshot = await getLatestSnapshot(vaultAddress);
 
     if (!snapshot) {
       return NextResponse.json(
@@ -18,6 +20,7 @@ export async function GET() {
     }
 
     const response: CurrentMetricsResponse = {
+      vaultAddress: snapshot.vaultAddress,
       timestamp: snapshot.timestamp.toISOString(),
       liquidity: {
         available: snapshot.availableLiquidity.toString(),
@@ -42,6 +45,11 @@ export async function GET() {
         delta: snapshot.utilizationDelta ? Number(snapshot.utilizationDelta) : null,
         severity: snapshot.velocitySeverity as SeverityLevel | null,
       },
+      strategy: snapshot.strategyTotalAssets ? {
+        totalAssets: snapshot.strategyTotalAssets.toString(),
+        allocationPct: Number(snapshot.strategyAllocPct),
+        isChanging: snapshot.isStrategyChanging,
+      } : null,
       overall: snapshot.overallSeverity as SeverityLevel,
     };
 

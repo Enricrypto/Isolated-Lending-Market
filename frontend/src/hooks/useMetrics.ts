@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import type { CurrentMetricsResponse, HistoryResponse, TimeRange } from "@/types/metrics"
 
 interface UseMetricsOptions {
+  vault?: string
   signal?: string
   range?: TimeRange
 }
@@ -15,7 +16,7 @@ interface UseMetricsResult {
   error: string | null
 }
 
-export function useMetrics({ signal, range }: UseMetricsOptions = {}): UseMetricsResult {
+export function useMetrics({ vault, signal, range }: UseMetricsOptions = {}): UseMetricsResult {
   const [metrics, setMetrics] = useState<CurrentMetricsResponse | null>(null)
   const [history, setHistory] = useState<HistoryResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -26,9 +27,14 @@ export function useMetrics({ signal, range }: UseMetricsOptions = {}): UseMetric
       setLoading(true)
       setError(null)
       try {
-        const promises: Promise<Response>[] = [fetch("/api/metrics")]
+        const vaultParam = vault ? `?vault=${vault}` : ""
+        const metricsUrl = `/api/metrics${vaultParam}`
+
+        const promises: Promise<Response>[] = [fetch(metricsUrl)]
         if (signal && range) {
-          promises.push(fetch(`/api/history?signal=${signal}&range=${range}`))
+          const historyParams = new URLSearchParams({ signal, range })
+          if (vault) historyParams.set("vault", vault)
+          promises.push(fetch(`/api/history?${historyParams.toString()}`))
         }
 
         const results = await Promise.all(promises)
@@ -53,7 +59,7 @@ export function useMetrics({ signal, range }: UseMetricsOptions = {}): UseMetric
     }
 
     fetchData()
-  }, [signal, range])
+  }, [vault, signal, range])
 
   return { metrics, history, loading, error }
 }

@@ -1,4 +1,10 @@
 {
+  "lib/aave-v3-core": {
+    "tag": {
+      "name": "v1.19.4",
+      "rev": "b74526a7bc67a3a117a1963fc871b3eb8cea8435"
+    }
+  },
   "lib/chainlink-brownie-contracts": {
     "tag": {
       "name": "1.3.0",

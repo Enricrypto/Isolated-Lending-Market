@@ -14,14 +14,14 @@ import {
 import { useAccount } from "wagmi";
 
 const coreNavigation = [
-  { name: "Vault Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Monitoring & Analytics", href: "/monitoring", icon: TrendingUp },
   { name: "Token Management", href: "/deposit", icon: Wallet },
 ];
 
 const adminNavigation = [
-  { name: "Strategy Config", href: "/strategy", icon: Settings },
-  { name: "Risk Engine", href: "/risk-engine", icon: ShieldAlert },
+  { name: "Strategy", href: "/strategy", icon: Settings, comingSoon: true },
+  { name: "Risk Engine", href: "/risk-engine", icon: ShieldAlert, comingSoon: true },
 ];
 
 export function Sidebar() {
@@ -111,6 +111,11 @@ export function Sidebar() {
                 } transition-colors`}
               />
               {item.name}
+              {item.comingSoon && (
+                <span className="ml-auto text-[9px] px-1.5 py-0.5 bg-slate-700/50 text-slate-500 rounded border border-slate-600/30 uppercase tracking-wider font-bold">
+                  Soon
+                </span>
+              )}
             </Link>
           );
         })}

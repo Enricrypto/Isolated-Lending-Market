@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BookOpen, PlayCircle } from "lucide-react";
+import { TokenIcon } from "@/components/TokenIcon";
 
 export default function LandingPage() {
   return (
@@ -417,13 +418,13 @@ export default function LandingPage() {
               </div>
 
               <div className="space-y-3">
-                {/* USDC Vault Row */}
+                {/* USDC Market Row */}
                 <div className="flex items-center justify-between p-4 rounded-lg bg-[#0e111a] border border-white/5 hover:border-white/10 transition-colors duration-500">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-500/15 border border-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-400">$</div>
+                    <div className="w-8 h-8 rounded-xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center"><TokenIcon symbol="usdc" size={18} /></div>
                     <div>
-                      <p className="text-sm font-medium text-white">USDC Vault</p>
-                      <p className="text-xs text-slate-500">Aave V3 Loop</p>
+                      <p className="text-sm font-medium text-white">USDC Market</p>
+                      <p className="text-xs text-slate-500">Isolated Lending</p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -432,13 +433,13 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                {/* WETH Vault Row */}
+                {/* WETH Market Row */}
                 <div className="flex items-center justify-between p-4 rounded-lg bg-[#0e111a] border border-white/5 hover:border-white/10 transition-colors duration-500">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-400">&#926;</div>
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center"><TokenIcon symbol="weth" size={18} /></div>
                     <div>
-                      <p className="text-sm font-medium text-white">WETH Vault</p>
-                      <p className="text-xs text-slate-500">Lido Staking</p>
+                      <p className="text-sm font-medium text-white">WETH Market</p>
+                      <p className="text-xs text-slate-500">Isolated Lending</p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -447,13 +448,13 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                {/* WBTC Vault Row */}
+                {/* WBTC Market Row */}
                 <div className="flex items-center justify-between p-4 rounded-lg bg-[#0e111a] border border-white/5 hover:border-white/10 transition-colors duration-500">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-amber-500/15 border border-amber-500/20 flex items-center justify-center text-xs font-bold text-amber-400">&#8383;</div>
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center"><TokenIcon symbol="wbtc" size={18} /></div>
                     <div>
-                      <p className="text-sm font-medium text-white">WBTC Vault</p>
-                      <p className="text-xs text-slate-500">Idle</p>
+                      <p className="text-sm font-medium text-white">WBTC Market</p>
+                      <p className="text-xs text-slate-500">Isolated Lending</p>
                     </div>
                   </div>
                   <div className="text-right">

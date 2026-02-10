@@ -120,6 +120,17 @@ export function computeOverallSeverity(
 }
 
 // =============================================================================
+// PROTOCOL-LEVEL SEVERITY (aggregated across vaults)
+// =============================================================================
+
+export function computeProtocolSeverity(
+  vaultSeverities: SeverityLevel[]
+): SeverityLevel {
+  if (vaultSeverities.length === 0) return 0;
+  return Math.max(...vaultSeverities) as SeverityLevel;
+}
+
+// =============================================================================
 // SEVERITY STYLING HELPERS
 // =============================================================================
 

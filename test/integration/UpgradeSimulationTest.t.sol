@@ -90,7 +90,9 @@ contract UpgradeSimulationTest is Test {
         vault = new Vault(usdc, address(0), address(strategy), deployer, "Vault USDC", "vUSDC");
 
         // Deploy IRM (with deployer for AccessControl)
-        irm = new InterestRateModel(0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), deployer);
+        irm = new InterestRateModel(
+            0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), deployer
+        );
 
         // Add ALL price feeds before transferring ownership to OracleRouter
         oracle.addPriceFeed(address(usdc), address(usdcFeed));
@@ -129,7 +131,7 @@ contract UpgradeSimulationTest is Test {
         proposers[0] = multisig;
         address[] memory executors = new address[](1);
         executors[0] = multisig;
-        timelock = new MarketTimelock(MIN_DELAY, proposers, executors);
+        timelock = new MarketTimelock(MIN_DELAY, proposers, executors, address(this));
 
         // Set guardian
         market.setGuardian(guardian);

@@ -51,7 +51,7 @@ contract OracleRouterTest is Test {
         assertEq(router.deviationTolerance(), 0.02e18);
         assertEq(router.criticalDeviation(), 0.05e18);
         assertEq(router.lkgDecayHalfLife(), 1800);
-        assertEq(router.lkgMaxAge(), 86400);
+        assertEq(router.lkgMaxAge(), 86_400);
     }
 
     function testConstructor_RevertsZeroOracle() public {
@@ -207,7 +207,7 @@ contract OracleRouterTest is Test {
         usdcFeed.setUpdatedAt(block.timestamp - 7200);
 
         // Advance time past lkgMaxAge (24 hours)
-        vm.warp(block.timestamp + 86401);
+        vm.warp(block.timestamp + 86_401);
 
         DataTypes.OracleEvaluation memory eval = router.evaluate(usdc);
 
@@ -288,7 +288,7 @@ contract OracleRouterTest is Test {
         // Kill Chainlink entirely so there's no stale fallback
         usdcFeed.setShouldRevert(true);
 
-        vm.warp(block.timestamp + 86400); // Exactly max age
+        vm.warp(block.timestamp + 86_400); // Exactly max age
 
         DataTypes.OracleEvaluation memory eval = router.evaluate(usdc);
 
@@ -389,12 +389,12 @@ contract OracleRouterTest is Test {
     // ==================== ADMIN: SET ORACLE PARAMS ====================
 
     function testSetOracleParams_Success() public {
-        router.setOracleParams(0.03e18, 0.08e18, 3600, 172800);
+        router.setOracleParams(0.03e18, 0.08e18, 3600, 172_800);
 
         assertEq(router.deviationTolerance(), 0.03e18);
         assertEq(router.criticalDeviation(), 0.08e18);
         assertEq(router.lkgDecayHalfLife(), 3600);
-        assertEq(router.lkgMaxAge(), 172800);
+        assertEq(router.lkgMaxAge(), 172_800);
     }
 
     function testSetOracleParams_RevertsNonOwner() public {
@@ -407,17 +407,17 @@ contract OracleRouterTest is Test {
                 ProtocolRoles.ORACLE_MANAGER_ROLE
             )
         );
-        router.setOracleParams(0.03e18, 0.08e18, 3600, 172800);
+        router.setOracleParams(0.03e18, 0.08e18, 3600, 172_800);
     }
 
     function testSetOracleParams_RevertsCriticalBelowTolerance() public {
         vm.expectRevert(Errors.InvalidRiskThreshold.selector);
-        router.setOracleParams(0.05e18, 0.03e18, 1800, 86400); // critical < tolerance
+        router.setOracleParams(0.05e18, 0.03e18, 1800, 86_400); // critical < tolerance
     }
 
     function testSetOracleParams_RevertsZeroHalfLife() public {
         vm.expectRevert(Errors.InvalidHalfLife.selector);
-        router.setOracleParams(0.02e18, 0.05e18, 0, 86400);
+        router.setOracleParams(0.02e18, 0.05e18, 0, 86_400);
     }
 
     function testSetOracleParams_RevertsZeroMaxAge() public {

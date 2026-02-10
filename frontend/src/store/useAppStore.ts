@@ -7,10 +7,6 @@ interface AppStore {
   selectedVault: VaultId;
   setSelectedVault: (vault: VaultId) => void;
 
-  // Active tab in vault panel
-  activeTab: "deposit" | "strategy";
-  setActiveTab: (tab: "deposit" | "strategy") => void;
-
   // Refresh trigger for data
   refreshKey: number;
   triggerRefresh: () => void;
@@ -24,10 +20,6 @@ export const useAppStore = create<AppStore>((set) => ({
   // Vault selection
   selectedVault: "usdc", // Default to USDC vault
   setSelectedVault: (vault) => set({ selectedVault: vault }),
-
-  // Tab state
-  activeTab: "deposit",
-  setActiveTab: (tab) => set({ activeTab: tab }),
 
   // Refresh state
   refreshKey: 0,

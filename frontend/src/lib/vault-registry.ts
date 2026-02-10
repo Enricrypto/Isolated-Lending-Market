@@ -1,4 +1,44 @@
-import type { VaultConfig } from "@/types/metrics";
+/**
+ * Vault Registry (BOOTSTRAP – STATIC)
+ * ----------------------------------
+ * This file defines the **initial, hardcoded set of vaults** monitored by the protocol.
+ *
+ * CURRENT ROLE (v1):
+ * - Acts as a static bootstrap manifest for known vaults
+ * - Provides VaultConfig objects to:
+ *   • polling orchestrator (agents/index.ts)
+ *   • monitoring & analytics pipeline
+ *   • UI routing / labeling
+ * - Ensures deterministic, auditable configuration during early development
+ *
+ * IMPORTANT:
+ * - This is NOT a generic or reusable Vault Registry
+ * - Vaults, strategies, and addresses are hardcoded
+ * - Adding or modifying vaults requires a redeploy
+ *
+ * WHY THIS EXISTS:
+ * - Early-stage safety and auditability
+ * - Avoids premature database or on-chain dependency
+ * - Stabilizes metrics, severity logic, and UI contracts first
+ *
+ * FUTURE PLAN (v2+):
+ * - Replace this file with a VaultRegistry interface
+ * - Back the registry by:
+ *   • Database tables (vaults, strategies, networks), or
+ *   • On-chain VaultFactory + indexer (permissionless creation)
+ * - Polling and agents must depend ONLY on the registry interface,
+ *   not on hardcoded configs
+ *
+ * MIGRATION STRATEGY:
+ * - Introduce a VaultRegistry abstraction
+ * - Implement StaticVaultRegistry (this file)
+ * - Later swap to DbVaultRegistry or OnChainVaultRegistry
+ *   with zero changes to pollers or agents
+ *
+ * Treat this file as a BOOTSTRAP MANIFEST, not a final design.
+ */
+
+import type { VaultConfig } from "@/types/metrics"
 
 export const VAULT_REGISTRY: VaultConfig[] = [
   {
@@ -6,16 +46,22 @@ export const VAULT_REGISTRY: VaultConfig[] = [
     marketAddress: "0x12f8DA89619C40553d9eA50aAce593cEb2f3eFcE",
     irmAddress: "0x7Eca31bB8e6C9369b34cacf2dF32E815EbdcAdB2",
     oracleRouterAddress: "0xf0a440147AAC2FF4349ca623f8bf9BD96EA43843",
-    strategyAddress: "0x7FC70540Ab332e9Fa74E6808352df88Ffd2Bfe36",
     loanAsset: "0xa23575D09B55c709590F7f5507b246043A8cF49b",
-    label: "USDC Vault",
-  },
-];
+    loanAssetDecimals: 6,
+    label: "USDC Market",
+    symbol: "USDC"
+  }
+]
 
-export const DEFAULT_VAULT = VAULT_REGISTRY[0];
+export const DEFAULT_VAULT = VAULT_REGISTRY[0]
 
 export function getVaultConfig(vaultAddress: string): VaultConfig | undefined {
   return VAULT_REGISTRY.find(
     (v) => v.vaultAddress.toLowerCase() === vaultAddress.toLowerCase()
-  );
+  )
 }
+
+export function getAllVaultAddresses(): string[] {
+  return VAULT_REGISTRY.map((v) => v.vaultAddress)
+}
+

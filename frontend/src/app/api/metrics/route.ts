@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLatestSnapshot } from "@/lib/db";
+import { getLatestMarketSnapshot } from "@/lib/db";
 import { DEFAULT_VAULT } from "@/lib/vault-registry";
 import type { CurrentMetricsResponse, SeverityLevel } from "@/types/metrics";
 
@@ -10,21 +10,21 @@ export const revalidate = 0;
 export async function GET(request: NextRequest) {
   try {
     const vaultAddress = request.nextUrl.searchParams.get("vault") || DEFAULT_VAULT.vaultAddress;
-    const snapshot = await getLatestSnapshot(vaultAddress);
+    const snapshot = await getLatestMarketSnapshot(vaultAddress);
 
     if (!snapshot) {
       return NextResponse.json(
-        { error: "No metrics available. Run a poll first." },
+        { error: "No metrics available. Start the indexer first." },
         { status: 404 }
       );
     }
 
     const response: CurrentMetricsResponse = {
-      vaultAddress: snapshot.vaultAddress,
+      vaultAddress,
       timestamp: snapshot.timestamp.toISOString(),
       liquidity: {
-        available: snapshot.availableLiquidity.toString(),
-        totalBorrows: snapshot.totalBorrows.toString(),
+        available: Number(snapshot.availableLiquidity),
+        totalBorrows: Number(snapshot.totalBorrows),
         depthRatio: Number(snapshot.liquidityDepthRatio),
         severity: snapshot.liquiditySeverity as SeverityLevel,
       },
@@ -35,21 +35,16 @@ export async function GET(request: NextRequest) {
         severity: snapshot.aprConvexitySeverity as SeverityLevel,
       },
       oracle: {
-        price: snapshot.oraclePrice.toString(),
+        price: Number(snapshot.oraclePrice),
         confidence: snapshot.oracleConfidence,
         riskScore: snapshot.oracleRiskScore,
         isStale: snapshot.oracleIsStale,
         severity: snapshot.oracleSeverity as SeverityLevel,
       },
       velocity: {
-        delta: snapshot.utilizationDelta ? Number(snapshot.utilizationDelta) : null,
-        severity: snapshot.velocitySeverity as SeverityLevel | null,
+        delta: null,
+        severity: null,
       },
-      strategy: snapshot.strategyTotalAssets ? {
-        totalAssets: snapshot.strategyTotalAssets.toString(),
-        allocationPct: Number(snapshot.strategyAllocPct),
-        isChanging: snapshot.isStrategyChanging,
-      } : null,
       overall: snapshot.overallSeverity as SeverityLevel,
     };
 

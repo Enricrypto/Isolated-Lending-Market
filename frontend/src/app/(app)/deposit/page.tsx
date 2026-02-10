@@ -7,6 +7,7 @@ import { useAccount } from "wagmi";
 import { useAppStore } from "@/store/useAppStore";
 import { TOKENS } from "@/lib/addresses";
 import { Wallet, ArrowRightLeft, Shield } from "lucide-react";
+import { TokenIcon } from "@/components/TokenIcon";
 
 export default function DepositPage() {
   const { address, isConnected } = useAccount();
@@ -39,7 +40,7 @@ export default function DepositPage() {
             Deposit & Withdraw
           </h1>
           <p className="text-slate-400 text-sm max-w-2xl font-light leading-relaxed">
-            Manage your positions across LendCore vaults. Deposit tokens to earn
+            Manage your positions across LendCore markets. Deposit tokens to earn
             yield or withdraw to your wallet.
           </p>
           <div className="absolute -top-20 -left-20 w-64 h-64 bg-indigo-600/10 rounded-full blur-[80px] pointer-events-none mix-blend-screen" />
@@ -51,7 +52,7 @@ export default function DepositPage() {
             <div className="glass-panel rounded-2xl overflow-hidden">
               <div className="px-6 py-5 border-b border-midnight-700/50 bg-white/5">
                 <h3 className="text-sm font-semibold text-white">
-                  Select Vault
+                  Select Market
                 </h3>
               </div>
               <div className="p-4 space-y-2">
@@ -66,13 +67,10 @@ export default function DepositPage() {
                     }`}
                   >
                     <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border border-white/10"
-                      style={{
-                        backgroundColor: `${vault.color}20`,
-                        color: vault.color,
-                      }}
+                      className="w-10 h-10 rounded-xl flex items-center justify-center border border-white/10"
+                      style={{ backgroundColor: `${vault.color}15` }}
                     >
-                      {vault.icon}
+                      <TokenIcon symbol={vault.symbol} size={22} />
                     </div>
                     <div className="flex-1 text-left">
                       <span className="text-sm font-medium text-white block">
@@ -97,17 +95,17 @@ export default function DepositPage() {
                 <InfoStep
                   icon={<Wallet className="w-4 h-4" />}
                   title="1. Approve Token"
-                  description="Grant the vault contract permission to transfer your tokens."
+                  description="Grant the market contract permission to transfer your tokens."
                 />
                 <InfoStep
                   icon={<ArrowRightLeft className="w-4 h-4" />}
                   title="2. Deposit"
-                  description="Your tokens are deposited into the ERC4626 vault and you receive shares."
+                  description="Your tokens are deposited into the lending market and you receive shares."
                 />
                 <InfoStep
                   icon={<Shield className="w-4 h-4" />}
                   title="3. Earn Yield"
-                  description="Your shares accumulate yield from the connected strategy."
+                  description="Your shares accumulate yield from lending interest."
                 />
               </div>
             </div>
@@ -119,11 +117,11 @@ export default function DepositPage() {
               <div className="px-6 py-5 border-b border-midnight-700/50 bg-white/5">
                 <h3 className="text-sm font-semibold text-white">
                   {selectedVault
-                    ? `${TOKENS[selectedVault.toUpperCase() as keyof typeof TOKENS].symbol} Vault`
-                    : "Select a Vault"}
+                    ? `${TOKENS[selectedVault.toUpperCase() as keyof typeof TOKENS].symbol} Market`
+                    : "Select a Market"}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Manage your vault position
+                  Manage your market position
                 </p>
               </div>
               <div className="p-6">

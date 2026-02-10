@@ -13,10 +13,12 @@ library Errors {
     error OnlyMarket();
     error OnlyMarketOwner();
     error SystemAddressRestricted();
+    error OnlyGuardianContract();
 
     // ==================== EMERGENCY CONTROLS ====================
     /// @notice Borrowing is paused - deposits, withdrawals, repayments still allowed
     error BorrowingPaused();
+    error OnlyAdminCanUnpause();
 
     // ==================== MARKET ERRORS ====================
     error TokenNotSupported();

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.30;
 
 interface IWETH {
     // Deposit ETH to mint WETH (users send ETH to the contract)

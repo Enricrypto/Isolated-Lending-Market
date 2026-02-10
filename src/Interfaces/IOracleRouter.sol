@@ -32,7 +32,10 @@ interface IOracleRouter {
     /// @notice Evaluate oracle for an asset using the full hierarchy
     /// @param asset The asset to evaluate
     /// @return evaluation Full evaluation result with confidence and risk scores
-    function evaluate(address asset) external view returns (DataTypes.OracleEvaluation memory evaluation);
+    function evaluate(address asset)
+        external
+        view
+        returns (DataTypes.OracleEvaluation memory evaluation);
 
     /// @notice Returns price and confidence level for an asset
     /// @param asset Address of the asset

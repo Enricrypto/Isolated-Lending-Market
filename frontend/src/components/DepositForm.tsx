@@ -13,6 +13,7 @@ import {
   type TransactionStep,
 } from "./TransactionStepper";
 import { Wallet, ArrowDownToLine, ArrowUpFromLine, Info } from "lucide-react";
+import { TokenIcon } from "@/components/TokenIcon";
 
 const client = createPublicClient({
   chain: sepolia,
@@ -318,12 +319,10 @@ export function DepositForm() {
             className="flex-1 bg-transparent text-2xl font-mono font-medium text-white placeholder-slate-700 outline-none"
           />
           <div
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-midnight-700/50"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-midnight-700/50"
             style={{ backgroundColor: `${token.color}10` }}
           >
-            <span className="text-sm" style={{ color: token.color }}>
-              {token.icon}
-            </span>
+            <TokenIcon symbol={token.symbol} size={18} />
             <span className="text-sm font-medium text-slate-300">
               {token.symbol}
             </span>

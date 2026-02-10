@@ -71,7 +71,9 @@ contract RiskEngineTest is Test {
         vault = new Vault(usdc, address(0), address(strategy), owner, "Vault USDC", "vUSDC");
 
         // Deploy IRM (with owner for AccessControl)
-        irm = new InterestRateModel(0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), owner);
+        irm = new InterestRateModel(
+            0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), owner
+        );
 
         // Add ALL price feeds before transferring ownership to OracleRouter
         oracle.addPriceFeed(address(usdc), address(usdcFeed));
@@ -81,7 +83,14 @@ contract RiskEngineTest is Test {
         // Deploy Market via proxy (using OracleRouter)
         MarketV1 implementation = new MarketV1();
         bytes memory initData = abi.encodeWithSelector(
-            MarketV1.initialize.selector, badDebtAddr, treasury, address(vault), address(router), address(irm), address(usdc), owner
+            MarketV1.initialize.selector,
+            badDebtAddr,
+            treasury,
+            address(vault),
+            address(router),
+            address(irm),
+            address(usdc),
+            owner
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         market = MarketV1(address(proxy));
@@ -100,7 +109,9 @@ contract RiskEngineTest is Test {
 
         // Deploy RiskEngine with default config
         DataTypes.RiskEngineConfig memory cfg = _defaultConfig();
-        riskEngine = new RiskEngine(address(market), address(vault), address(router), address(irm), owner, cfg);
+        riskEngine = new RiskEngine(
+            address(market), address(vault), address(router), address(irm), owner, cfg
+        );
 
         // Fund alice with tokens
         usdc.mint(alice, 1_000_000e6);
@@ -118,7 +129,7 @@ contract RiskEngineTest is Test {
             oracleDeviationTolerance: 0.02e18,
             oracleCriticalDeviation: 0.05e18,
             lkgDecayHalfLife: 1800,
-            lkgMaxAge: 86400,
+            lkgMaxAge: 86_400,
             utilizationWarning: 0.85e18,
             utilizationCritical: 0.95e18,
             healthFactorWarning: 1.2e18,
@@ -154,7 +165,9 @@ contract RiskEngineTest is Test {
         new RiskEngine(address(market), address(vault), address(router), address(0), owner, cfg);
 
         vm.expectRevert(Errors.ZeroAddress.selector);
-        new RiskEngine(address(market), address(vault), address(router), address(irm), address(0), cfg);
+        new RiskEngine(
+            address(market), address(vault), address(router), address(irm), address(0), cfg
+        );
     }
 
     // ==================== ASSESS RISK: NORMAL CONDITIONS ====================
@@ -258,10 +271,7 @@ contract RiskEngineTest is Test {
 
     function testSeverity_AllNormal() public pure {
         DataTypes.DimensionScore memory scores = DataTypes.DimensionScore({
-            oracleRisk: 10,
-            liquidityRisk: 15,
-            solvencyRisk: 5,
-            strategyRisk: 20
+            oracleRisk: 10, liquidityRisk: 15, solvencyRisk: 5, strategyRisk: 20
         });
 
         RiskEngine engine; // We'll use the pure function directly
@@ -270,32 +280,36 @@ contract RiskEngineTest is Test {
     }
 
     function testSeverity_Elevated() public view {
-        DataTypes.DimensionScore memory scores =
-            DataTypes.DimensionScore({oracleRisk: 30, liquidityRisk: 15, solvencyRisk: 5, strategyRisk: 10});
+        DataTypes.DimensionScore memory scores = DataTypes.DimensionScore({
+            oracleRisk: 30, liquidityRisk: 15, solvencyRisk: 5, strategyRisk: 10
+        });
 
         uint8 severity = riskEngine.computeSeverity(scores);
         assertEq(severity, 1); // Elevated (max score 30 >= 25)
     }
 
     function testSeverity_Critical() public view {
-        DataTypes.DimensionScore memory scores =
-            DataTypes.DimensionScore({oracleRisk: 55, liquidityRisk: 15, solvencyRisk: 5, strategyRisk: 10});
+        DataTypes.DimensionScore memory scores = DataTypes.DimensionScore({
+            oracleRisk: 55, liquidityRisk: 15, solvencyRisk: 5, strategyRisk: 10
+        });
 
         uint8 severity = riskEngine.computeSeverity(scores);
         assertEq(severity, 2); // Critical (max score 55 >= 50)
     }
 
     function testSeverity_Emergency() public view {
-        DataTypes.DimensionScore memory scores =
-            DataTypes.DimensionScore({oracleRisk: 80, liquidityRisk: 60, solvencyRisk: 5, strategyRisk: 10});
+        DataTypes.DimensionScore memory scores = DataTypes.DimensionScore({
+            oracleRisk: 80, liquidityRisk: 60, solvencyRisk: 5, strategyRisk: 10
+        });
 
         uint8 severity = riskEngine.computeSeverity(scores);
         assertEq(severity, 3); // Emergency (max score 80 >= 75)
     }
 
     function testSeverity_MaxAcrossDimensions() public view {
-        DataTypes.DimensionScore memory scores =
-            DataTypes.DimensionScore({oracleRisk: 10, liquidityRisk: 10, solvencyRisk: 10, strategyRisk: 80});
+        DataTypes.DimensionScore memory scores = DataTypes.DimensionScore({
+            oracleRisk: 10, liquidityRisk: 10, solvencyRisk: 10, strategyRisk: 80
+        });
 
         uint8 severity = riskEngine.computeSeverity(scores);
         assertEq(severity, 3); // Emergency from strategy alone
@@ -438,12 +452,12 @@ contract RiskEngineTest is Test {
 
     function testSetConfig_Success() public {
         DataTypes.RiskEngineConfig memory newCfg = _defaultConfig();
-        newCfg.utilizationWarning = 0.90e18;
+        newCfg.utilizationWarning = 0.9e18;
 
         riskEngine.setConfig(newCfg);
 
         DataTypes.RiskEngineConfig memory stored = riskEngine.getConfig();
-        assertEq(stored.utilizationWarning, 0.90e18);
+        assertEq(stored.utilizationWarning, 0.9e18);
     }
 
     function testSetConfig_RevertsNonOwner() public {
@@ -491,7 +505,9 @@ contract RiskEngineTest is Test {
 
     // ==================== HELPERS ====================
 
-    function _depositAndBorrow(address user, uint256 collateralAmount, uint256 borrowAmount) internal {
+    function _depositAndBorrow(address user, uint256 collateralAmount, uint256 borrowAmount)
+        internal
+    {
         vm.startPrank(user);
         weth.approve(address(market), collateralAmount);
         market.depositCollateral(address(weth), collateralAmount);

@@ -70,7 +70,9 @@ contract RiskEngineIntegrationTest is Test {
         vault = new Vault(usdc, address(0), address(strategy), owner, "Vault USDC", "vUSDC");
 
         // Deploy IRM (with owner for AccessControl)
-        irm = new InterestRateModel(0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), owner);
+        irm = new InterestRateModel(
+            0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), owner
+        );
 
         // Add ALL price feeds before transferring ownership to OracleRouter
         oracle.addPriceFeed(address(usdc), address(usdcFeed));
@@ -109,7 +111,7 @@ contract RiskEngineIntegrationTest is Test {
             oracleDeviationTolerance: 0.02e18,
             oracleCriticalDeviation: 0.05e18,
             lkgDecayHalfLife: 1800,
-            lkgMaxAge: 86400,
+            lkgMaxAge: 86_400,
             utilizationWarning: 0.85e18,
             utilizationCritical: 0.95e18,
             healthFactorWarning: 1.2e18,
@@ -117,7 +119,9 @@ contract RiskEngineIntegrationTest is Test {
             badDebtThreshold: 0.01e18,
             strategyAllocationCap: 1e18
         });
-        riskEngine = new RiskEngine(address(market), address(vault), address(router), address(irm), owner, cfg);
+        riskEngine = new RiskEngine(
+            address(market), address(vault), address(router), address(irm), owner, cfg
+        );
 
         // Fund vault with liquidity
         usdc.mint(address(this), 1_000_000e6);
@@ -183,7 +187,7 @@ contract RiskEngineIntegrationTest is Test {
         usdcFeed.setShouldRevert(true);
 
         // LKG was just stored so confidence is still high — advance time past max age
-        vm.warp(block.timestamp + 86401);
+        vm.warp(block.timestamp + 86_401);
 
         DataTypes.RiskAssessment memory assessment = riskEngine.assessRisk();
 

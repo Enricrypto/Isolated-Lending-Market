@@ -142,5 +142,7 @@ library Events {
     event TWAPOracleRemoved(address indexed asset);
 
     /// @notice Emitted when oracle evaluation uses fallback
-    event OracleFallbackUsed(address indexed asset, uint8 sourceUsed, uint256 resolvedPrice, uint256 confidence);
+    event OracleFallbackUsed(
+        address indexed asset, uint8 sourceUsed, uint256 resolvedPrice, uint256 confidence
+    );
 }

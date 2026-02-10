@@ -322,7 +322,13 @@ contract MockConfigurablePriceFeed {
     function latestRoundData()
         external
         view
-        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+        returns (
+            uint80 roundId,
+            int256 answer,
+            uint256 startedAt,
+            uint256 updatedAt,
+            uint80 answeredInRound
+        )
     {
         require(!_shouldRevert, "MockConfigurablePriceFeed: forced revert");
         return (_roundId, price, _updatedAt, _updatedAt, _answeredInRound);
@@ -357,7 +363,11 @@ contract MockTWAPOracle is ITWAPOracle {
         shouldRevert = _shouldRevert;
     }
 
-    function getTWAP(address asset, uint32) external view returns (uint256 price, uint256 updatedAt) {
+    function getTWAP(address asset, uint32)
+        external
+        view
+        returns (uint256 price, uint256 updatedAt)
+    {
         require(!shouldRevert, "MockTWAPOracle: forced revert");
         require(supported[asset], "Asset not supported");
         return (prices[asset], lastUpdate);

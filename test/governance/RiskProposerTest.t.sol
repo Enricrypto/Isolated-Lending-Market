@@ -86,7 +86,9 @@ contract RiskProposerTest is Test {
         vault = new Vault(usdc, address(0), address(strategy), admin, "Vault USDC", "vUSDC");
 
         // Deploy IRM
-        irm = new InterestRateModel(0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), admin);
+        irm = new InterestRateModel(
+            0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), admin
+        );
 
         // Deploy market via proxy
         MarketV1 implementation = new MarketV1();
@@ -117,7 +119,7 @@ contract RiskProposerTest is Test {
             oracleDeviationTolerance: 0.02e18,
             oracleCriticalDeviation: 0.05e18,
             lkgDecayHalfLife: 1800,
-            lkgMaxAge: 86400,
+            lkgMaxAge: 86_400,
             utilizationWarning: 0.85e18,
             utilizationCritical: 0.95e18,
             healthFactorWarning: 1.2e18,
@@ -126,12 +128,7 @@ contract RiskProposerTest is Test {
             strategyAllocationCap: 0.9e18
         });
         riskEngine = new RiskEngine(
-            address(market),
-            address(vault),
-            address(oracleRouter),
-            address(irm),
-            admin,
-            riskConfig
+            address(market), address(vault), address(oracleRouter), address(irm), admin, riskConfig
         );
 
         // Compute the RiskProposer address in advance
@@ -145,7 +142,7 @@ contract RiskProposerTest is Test {
         proposers[1] = predictedRiskProposer;
         address[] memory executors = new address[](1);
         executors[0] = admin;
-        timelock = new MarketTimelock(TIMELOCK_DELAY, proposers, executors);
+        timelock = new MarketTimelock(TIMELOCK_DELAY, proposers, executors, address(this));
 
         // Deploy RiskProposer - should match predictedRiskProposer
         riskProposer = new RiskProposer(
@@ -333,7 +330,7 @@ contract RiskProposerTest is Test {
         // Wait for timelock delay
         vm.warp(block.timestamp + TIMELOCK_DELAY + 1);
 
-        (, , uint8 state) = riskProposer.getActiveProposal();
+        (,, uint8 state) = riskProposer.getActiveProposal();
         assertEq(state, 1); // Ready
     }
 
@@ -414,14 +411,14 @@ contract RiskProposerTest is Test {
         // This test verifies the proposal creation mechanism works
 
         // 6. Verify proposal is in ready state
-        (, , uint8 state) = riskProposer.getActiveProposal();
+        (,, uint8 state) = riskProposer.getActiveProposal();
         assertEq(state, 1); // Ready
     }
 
     function test_RiskProposer_PermissionlessMonitoring() public {
         // Anyone can check if proposal can be created
         vm.prank(randomUser);
-        (bool canPropose, ) = riskProposer.canCreateProposal();
+        (bool canPropose,) = riskProposer.canCreateProposal();
         assertFalse(canPropose); // Low severity
 
         // Lower threshold

@@ -1,53 +1,43 @@
-import { PrismaClient } from "@prisma/client"
+import { PrismaClient } from "../../prisma/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
-import { Pool } from "pg"
 
-// Prevent multiple instances of Prisma Client in development (Next.js hot reloads)
+// Singleton for dev
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
 function createPrismaClient() {
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }, // Required for Supabase
-    max: 5 // Keep low for free-tier / shared DB
+  const adapter = new PrismaPg({
+    connectionString: process.env.PG_URL || process.env.DATABASE_URL!,
+    ssl: { rejectUnauthorized: false }
   })
-  console.log("DATABASE_URL =", process.env.DATABASE_URL)
-
-  const adapter = new PrismaPg(pool)
 
   return new PrismaClient({
-    adapter,
-    log:
-      process.env.NODE_ENV === "development"
-        ? ["query", "warn", "error"]
-        : ["error"]
+    adapter, // ← REQUIRED
+    log: ["query", "info", "warn", "error"] // optional
   })
 }
 
-// Use singleton in development to prevent multiple connections
 export const prisma = globalForPrisma.prisma ?? createPrismaClient()
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma
 }
 
-// --- Helpers ---
+// --- Helpers (unchanged) ---
+type Snapshot = Awaited<
+  ReturnType<typeof prisma.metricSnapshot.findMany>
+>[number]
 
-// Delete snapshots older than 90 days
 export async function cleanupOldSnapshots() {
   const ninetyDaysAgo = new Date()
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
-
   const result = await prisma.metricSnapshot.deleteMany({
     where: { timestamp: { lt: ninetyDaysAgo } }
   })
-
   return result.count
 }
 
-// Get the most recent snapshot, optionally filtered by vault
 export async function getLatestSnapshot(vaultAddress?: string) {
   try {
     return await prisma.metricSnapshot.findFirst({
@@ -60,17 +50,16 @@ export async function getLatestSnapshot(vaultAddress?: string) {
   }
 }
 
-// Get snapshots in a given range, optionally filtered by vault
 export async function getSnapshotsInRange(
   startTime: Date,
   endTime: Date = new Date(),
   vaultAddress?: string
-) {
+): Promise<Snapshot[]> {
   try {
     return await prisma.metricSnapshot.findMany({
       where: {
         timestamp: { gte: startTime, lte: endTime },
-        ...(vaultAddress ? { vaultAddress } : {}),
+        ...(vaultAddress ? { vaultAddress } : {})
       },
       orderBy: { timestamp: "asc" }
     })
@@ -80,7 +69,93 @@ export async function getSnapshotsInRange(
   }
 }
 
-// Convert string range to Date
+export async function getLatestSnapshotsForAllVaults(
+  vaultAddresses: string[]
+): Promise<Map<string, Snapshot>> {
+  const results = await Promise.all(
+    vaultAddresses.map(async (addr) => {
+      const snapshot = await prisma.metricSnapshot.findFirst({
+        where: { vaultAddress: addr },
+        orderBy: { timestamp: "desc" },
+      })
+      return [addr, snapshot] as const
+    })
+  )
+
+  const map = new Map<string, Snapshot>()
+  for (const [addr, snapshot] of results) {
+    if (snapshot) map.set(addr, snapshot)
+  }
+  return map
+}
+
+// --- MarketSnapshot helpers (Phase 5) ---
+
+type MktSnapshot = Awaited<
+  ReturnType<typeof prisma.marketSnapshot.findMany>
+>[number]
+
+/** Get latest MarketSnapshot for a market, looked up by vaultAddress */
+export async function getLatestMarketSnapshot(vaultAddress: string) {
+  try {
+    const market = await prisma.market.findUnique({
+      where: { vaultAddress },
+    })
+    if (!market) return null
+    return await prisma.marketSnapshot.findFirst({
+      where: { marketId: market.id },
+      orderBy: { timestamp: "desc" },
+    })
+  } catch (err) {
+    console.error("getLatestMarketSnapshot error:", err)
+    return null
+  }
+}
+
+/** Get MarketSnapshot time-series for a market within a time range */
+export async function getMarketSnapshotsInRange(
+  vaultAddress: string,
+  startTime: Date,
+  endTime: Date = new Date()
+): Promise<MktSnapshot[]> {
+  try {
+    const market = await prisma.market.findUnique({
+      where: { vaultAddress },
+    })
+    if (!market) return []
+    return await prisma.marketSnapshot.findMany({
+      where: {
+        marketId: market.id,
+        timestamp: { gte: startTime, lte: endTime },
+      },
+      orderBy: { timestamp: "asc" },
+    })
+  } catch (err) {
+    console.error("getMarketSnapshotsInRange error:", err)
+    return []
+  }
+}
+
+/** Get latest MarketSnapshot for every active market */
+export async function getLatestSnapshotsForAllMarkets() {
+  try {
+    const markets = await prisma.market.findMany({ where: { isActive: true } })
+    const results = await Promise.all(
+      markets.map(async (m) => {
+        const snapshot = await prisma.marketSnapshot.findFirst({
+          where: { marketId: m.id },
+          orderBy: { timestamp: "desc" },
+        })
+        return { market: m, snapshot }
+      })
+    )
+    return results
+  } catch (err) {
+    console.error("getLatestSnapshotsForAllMarkets error:", err)
+    return []
+  }
+}
+
 export function getTimeRangeStart(range: string): Date {
   const now = new Date()
   switch (range) {

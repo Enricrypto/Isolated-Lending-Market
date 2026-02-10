@@ -21,7 +21,7 @@ import "../src/access/ProtocolAccessControl.sol";
  *
  * DEPLOYS (IN ORDER):
  * 1. Mock tokens (USDC, WETH, WBTC)
- * 2. Mock price feeds
+ * 2. Uses REAL Chainlink Sepolia price feeds (no mock feeds)
  * 3. Mock strategy
  * 4. PriceOracle (underlying Chainlink wrapper)
  * 5. OracleRouter (hierarchical oracle: Chainlink → TWAP → LKG fallback)
@@ -51,6 +51,12 @@ contract DeployAll is Script {
     uint256 constant OPTIMAL_UTILIZATION = 0.8e18; // 80%
     uint256 constant SLOPE1 = 0.04e18; // 4%
     uint256 constant SLOPE2 = 0.6e18; // 60%
+
+    // ==================== CHAINLINK SEPOLIA FEEDS ====================
+
+    address constant CHAINLINK_USDC_USD = 0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E;
+    address constant CHAINLINK_ETH_USD = 0x694AA1769357215DE4FAC081bf1f309aDC325306;
+    address constant CHAINLINK_BTC_USD = 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43;
 
     // ==================== GOVERNANCE ====================
 
@@ -101,10 +107,10 @@ contract DeployAll is Script {
         d.weth = address(new MockERC20("Wrapped Ether", "WETH", 18));
         d.wbtc = address(new MockERC20("Wrapped Bitcoin", "WBTC", 8));
 
-        // 2. Deploy mock price feeds
-        d.usdcFeed = address(new MockPriceFeed(100_000_000)); // $1.00
-        d.wethFeed = address(new MockPriceFeed(2_000_000_000_000)); // $2,000
-        d.wbtcFeed = address(new MockPriceFeed(5_000_000_000_000)); // $50,000
+        // 2. Use real Chainlink Sepolia price feeds (no mocks)
+        d.usdcFeed = CHAINLINK_USDC_USD;
+        d.wethFeed = CHAINLINK_ETH_USD;
+        d.wbtcFeed = CHAINLINK_BTC_USD;
 
         // 3. Deploy mock strategy
         d.strategy = address(new MockStrategy(MockERC20(d.usdc), "USDC Strategy", "sUSDC"));
@@ -112,9 +118,12 @@ contract DeployAll is Script {
         // 4. Deploy PriceOracle (underlying Chainlink wrapper)
         d.oracle = address(new PriceOracle(deployer));
 
+        // 4b. Increase maxPriceAge for Sepolia (testnet feeds have longer heartbeats)
+        PriceOracle(d.oracle).setMaxPriceAge(4 hours);
+
         // 5. Deploy OracleRouter wrapping PriceOracle
         OracleRouter oracleRouter = new OracleRouter(d.oracle, deployer);
-        oracleRouter.setOracleParams(0.02e18, 0.05e18, 1800, 86400);
+        oracleRouter.setOracleParams(0.02e18, 0.05e18, 1800, 86_400);
         d.oracleRouter = address(oracleRouter);
 
         // 6. Add ALL price feeds before transferring PriceOracle ownership
@@ -133,7 +142,9 @@ contract DeployAll is Script {
 
         // 9. Deploy IRM (with deployer as initial owner for role-based access control)
         d.irm = address(
-            new InterestRateModel(BASE_RATE, OPTIMAL_UTILIZATION, SLOPE1, SLOPE2, d.vault, address(0), deployer)
+            new InterestRateModel(
+                BASE_RATE, OPTIMAL_UTILIZATION, SLOPE1, SLOPE2, d.vault, address(0), deployer
+            )
         );
 
         // 10. Deploy market implementation
@@ -169,7 +180,7 @@ contract DeployAll is Script {
             oracleDeviationTolerance: 0.02e18,
             oracleCriticalDeviation: 0.05e18,
             lkgDecayHalfLife: 1800,
-            lkgMaxAge: 86400,
+            lkgMaxAge: 86_400,
             utilizationWarning: 0.85e18,
             utilizationCritical: 0.95e18,
             healthFactorWarning: 1.2e18,
@@ -181,13 +192,14 @@ contract DeployAll is Script {
             new RiskEngine(d.proxy, d.vault, d.oracleRouter, d.irm, deployer, riskConfig)
         );
 
-        // 15. Deploy timelock (proposers: multisig, executors: multisig)
+        // 15. Deploy timelock (proposers: multisig, executors: multisig, admin: deployer for setup)
         address[] memory proposers = _toArray(multisig);
         address[] memory executors = _toArray(multisig);
-        d.timelock = address(new MarketTimelock(TIMELOCK_DELAY, proposers, executors));
+        d.timelock = address(new MarketTimelock(TIMELOCK_DELAY, proposers, executors, deployer));
 
         // 16. Deploy EmergencyGuardian (can pause market instantly)
-        d.emergencyGuardian = address(new EmergencyGuardian(d.proxy, guardian));
+        // Timelock owns it
+        d.emergencyGuardian = address(new EmergencyGuardian(d.proxy, guardian, d.timelock));
 
         // 17. Deploy RiskProposer (auto-creates proposals when severity >= 2)
         d.riskProposer = address(
@@ -201,10 +213,22 @@ contract DeployAll is Script {
         );
 
         // 18. Grant PROPOSER_ROLE to RiskProposer on Timelock
-        MarketTimelock(payable(d.timelock)).grantRole(
-            MarketTimelock(payable(d.timelock)).PROPOSER_ROLE(),
-            d.riskProposer
-        );
+        // Grant proposer powers. RiskProposer can now schedule governance actions.
+        MarketTimelock(payable(d.timelock))
+            .grantRole(MarketTimelock(payable(d.timelock)).PROPOSER_ROLE(), d.riskProposer);
+
+        // 18b. Transfer RiskProposer ownership to Timelock
+        // Transfer RiskProposer ownership. Now only Timelock can change risk parameters.
+        RiskProposer(d.riskProposer).transferOwnership(d.timelock);
+
+        // 18c. Transfer Guardian ownership to Timelock. 
+        // Transfer Guardian ownership. Now only Timelock can manage guardians.
+        EmergencyGuardian(d.guardian).transferOwnership(d.timelock);
+
+        // 18d. Renounce deployer's admin role on Timelock (no more role changes after this).
+        // Renounce deployer admin role. Now deployer has zero power forever.
+        MarketTimelock(payable(d.timelock))
+            .renounceRole(MarketTimelock(payable(d.timelock)).DEFAULT_ADMIN_ROLE(), deployer);
 
         // 19. Set guardian and transfer Market ownership to Timelock
         market.setGuardian(d.emergencyGuardian);

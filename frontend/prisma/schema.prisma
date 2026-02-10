@@ -1,13 +1,19 @@
-// Prisma schema for the monitoring dashboard
-// Database: PostgreSQL
+// Prisma schema for the LendCore lending protocol
+// Database: PostgreSQL (Supabase)
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "./generated/prisma"
+  compilerBuild = "fast"
 }
 
 datasource db {
   provider = "postgresql"
 }
+
+// =============================================================================
+// LEGACY — Polling-based metric snapshots (Phase 1-2 pipeline, to be retired)
+// =============================================================================
 
 model MetricSnapshot {
   id        Int      @id @default(autoincrement())
@@ -15,7 +21,6 @@ model MetricSnapshot {
 
   // Multi-vault identification
   vaultAddress    String @default("0xE8323c3d293f81C71232023367Bada21137C055E") @db.VarChar(42)
-  strategyAddress String @default("0x7FC70540Ab332e9Fa74E6808352df88Ffd2Bfe36") @db.VarChar(42)
 
   // Liquidity Depth
   availableLiquidity  Decimal @db.Decimal(78, 0)
@@ -37,11 +42,6 @@ model MetricSnapshot {
   oracleIsStale    Boolean
   oracleSeverity   Int
 
-  // Strategy Monitoring
-  strategyTotalAssets Decimal? @db.Decimal(78, 0)
-  strategyAllocPct   Decimal? @db.Decimal(18, 6)
-  isStrategyChanging Boolean  @default(false)
-
   // Utilization Velocity (computed from deltas)
   utilizationDelta Decimal? @db.Decimal(18, 6)
   velocitySeverity Int?
@@ -51,4 +51,130 @@ model MetricSnapshot {
 
   @@index([timestamp, vaultAddress])
   @@index([vaultAddress])
+}
+
+// =============================================================================
+// NEW — Isolated Lending Market models (Phase 3+)
+// =============================================================================
+
+/// Static registry of isolated lending markets.
+/// Replaces the hardcoded VAULT_REGISTRY bootstrap manifest.
+model Market {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // On-chain addresses (Sepolia)
+  vaultAddress        String @unique @db.VarChar(42)
+  marketAddress       String @db.VarChar(42)
+  irmAddress          String @db.VarChar(42)
+  oracleRouterAddress String @db.VarChar(42)
+  loanAsset           String @db.VarChar(42)
+  loanAssetDecimals   Int
+
+  // Display metadata
+  label  String
+  symbol String
+
+  // Status
+  isActive Boolean @default(true)
+
+  // Relations
+  snapshots    MarketSnapshot[]
+  positions    UserPositionSnapshot[]
+  liquidations LiquidationEvent[]
+}
+
+/// Periodic market-level state snapshot.
+/// Written by the indexer on each event + periodic interval.
+model MarketSnapshot {
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime @default(now())
+
+  // Market reference
+  marketId String
+  market   Market @relation(fields: [marketId], references: [id])
+
+  // Core metrics (all amounts in human-readable units, e.g. 1500.50 USDC)
+  totalSupply        Decimal @db.Decimal(30, 6)
+  totalBorrows       Decimal @db.Decimal(30, 6)
+  availableLiquidity Decimal @db.Decimal(30, 6)
+
+  // Rates (0-1 range, e.g. 0.05 = 5%)
+  utilizationRate    Decimal @db.Decimal(18, 6)
+  borrowRate         Decimal @db.Decimal(18, 6)
+  lendingRate        Decimal @db.Decimal(18, 6)
+  optimalUtilization Decimal @default(0) @db.Decimal(18, 6)
+
+  // Derived liquidity metrics
+  liquidityDepthRatio Decimal @default(0) @db.Decimal(18, 6)
+  distanceToKink      Decimal @default(0) @db.Decimal(18, 6)
+
+  // Oracle
+  oraclePrice      Decimal @db.Decimal(30, 6)
+  oracleConfidence Int
+  oracleRiskScore  Int     @default(0)
+  oracleIsStale    Boolean
+
+  // Interest tracking
+  globalBorrowIndex Decimal? @db.Decimal(30, 18)
+
+  // Per-dimension severity (0-3)
+  liquiditySeverity    Int @default(0)
+  aprConvexitySeverity Int @default(0)
+  oracleSeverity       Int @default(0)
+
+  // Risk severity (0 = normal, 1 = elevated, 2 = critical, 3 = emergency)
+  overallSeverity Int
+
+  @@index([marketId, timestamp])
+  @@index([timestamp])
+}
+
+/// Per-user position snapshot within a market.
+/// Updated on each Deposit/Withdraw/Borrow/Repay/Liquidate event.
+model UserPositionSnapshot {
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime @default(now())
+
+  // User + Market
+  userAddress String @db.VarChar(42)
+  marketId    String
+  market      Market @relation(fields: [marketId], references: [id])
+
+  // Position data (human-readable units)
+  collateralValue Decimal @db.Decimal(30, 6)
+  totalDebt       Decimal @db.Decimal(30, 6)
+  healthFactor    Decimal @db.Decimal(18, 6)
+  borrowingPower  Decimal @db.Decimal(30, 6)
+
+  @@index([userAddress, marketId])
+  @@index([marketId, timestamp])
+}
+
+/// On-chain liquidation event record.
+/// One row per Liquidated event emitted by MarketV1.
+model LiquidationEvent {
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime @default(now())
+
+  // On-chain reference
+  txHash      String @db.VarChar(66)
+  blockNumber Int
+  logIndex    Int
+
+  // Market reference
+  marketId String
+  market   Market @relation(fields: [marketId], references: [id])
+
+  // Liquidation data (human-readable units)
+  borrower         String  @db.VarChar(42)
+  liquidator       String  @db.VarChar(42)
+  debtCovered      Decimal @db.Decimal(30, 6)
+  collateralSeized Decimal @db.Decimal(30, 6)
+  badDebt          Decimal @db.Decimal(30, 6)
+
+  @@unique([txHash, logIndex])
+  @@index([marketId, timestamp])
+  @@index([borrower])
 }

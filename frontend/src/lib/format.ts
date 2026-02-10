@@ -1,29 +1,25 @@
 /**
- * Format a raw BigInt string (with 6 decimals) into a human-readable number.
- * e.g. "1500000000000" -> "1.50M"
+ * Format a normalized number into a human-readable abbreviated string.
+ * Input is already human-readable (e.g. 1500000.5 USDC, not raw BigInt).
+ * e.g. 1500000.5 -> "1.50M", 1500.5 -> "1.50K", 500 -> "500"
  */
-export function formatLargeNumber(value: string): string {
-  const num = BigInt(value)
-  const divisor = BigInt(1e6)
-  const whole = num / divisor
-
-  if (whole >= 1_000_000n) {
-    return `${(Number(whole) / 1_000_000).toFixed(2)}M`
+export function formatLargeNumber(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(2)}M`
   }
-  if (whole >= 1_000n) {
-    return `${(Number(whole) / 1_000).toFixed(2)}K`
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(2)}K`
   }
-  return whole.toString()
+  return value.toFixed(2)
 }
 
 /**
- * Format a raw BigInt price string (18 decimals) into USD.
- * e.g. "1000000000000000000" -> "1.00"
+ * Format a normalized price number into USD display.
+ * Input is already human-readable (e.g. 1.0002).
+ * e.g. 1.0002 -> "1.0002"
  */
-export function formatPrice(priceString: string): string {
-  const price = BigInt(priceString)
-  const usd = Number(price) / 1e18
-  return usd.toFixed(4)
+export function formatPrice(price: number): string {
+  return price.toFixed(4)
 }
 
 /**

@@ -81,11 +81,14 @@ contract MarketTimelock is TimelockController {
      * @param minDelay Minimum delay for operations (in seconds)
      * @param proposers Addresses that can propose (typically the multisig)
      * @param executors Addresses that can execute (address(0) means anyone after delay)
-     * @dev Admin is set to address(0) so no one can modify roles after deployment
+     * @param admin Temporary admin for post-deployment role grants (should renounce after setup)
      */
-    constructor(uint256 minDelay, address[] memory proposers, address[] memory executors)
-        TimelockController(minDelay, proposers, executors, address(0))
-    { }
+    constructor(
+        uint256 minDelay,
+        address[] memory proposers,
+        address[] memory executors,
+        address admin
+    ) TimelockController(minDelay, proposers, executors, admin) { }
 }
 
 /**
@@ -125,6 +128,7 @@ contract EmergencyGuardian {
     error OnlyOwner();
     error OnlyGuardian();
     error ZeroAddress();
+    error ZeroOwner();
     error AlreadyGuardian();
     error NotGuardian();
 
@@ -138,15 +142,21 @@ contract EmergencyGuardian {
         _;
     }
 
-    constructor(address _market, address _initialGuardian) {
+    constructor(address _market, address _initialGuardian, address _governanceOwner) {
         if (_market == address(0)) revert ZeroAddress();
-        if (_initialGuardian == address(0)) revert ZeroAddress();
+        if (_governanceOwner == address(0)) revert ZeroOwner();
+
+        // Default the initial guardian to the deployer if none provided
+        address guardianToSet = _initialGuardian;
+        if (guardianToSet == address(0)) {
+            guardianToSet = msg.sender;
+        }
 
         market = IMarketPausable(_market);
-        owner = msg.sender;
-        guardians[_initialGuardian] = true;
+        owner = _governanceOwner;
+        guardians[guardianToSet] = true;
 
-        emit GuardianAdded(_initialGuardian);
+        emit GuardianAdded(guardianToSet);
     }
 
     /**
@@ -184,7 +194,8 @@ contract EmergencyGuardian {
     }
 
     /**
-     * @notice Transfer ownership
+     * @notice Transfer ownership, new owner should ideally be a timelock
+     *         or multisig, not a personal EOA.
      * @param newOwner New owner address
      */
     function transferOwnership(address newOwner) external onlyOwner {

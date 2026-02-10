@@ -72,7 +72,9 @@ contract Vault is ERC4626, ReentrancyGuard, ProtocolAccessControl {
         string memory _name,
         string memory _symbol
     ) ERC20(_name, _symbol) ERC4626(IERC20(_asset)) {
-        if (address(_asset) == address(0)) revert Errors.InvalidTokenAddress();
+        if (address(_asset) == address(0)) {
+            revert Errors.InvalidTokenAddress();
+        }
         if (_strategy == address(0)) revert Errors.InvalidStrategy();
         if (_owner == address(0)) revert Errors.ZeroAddress();
 

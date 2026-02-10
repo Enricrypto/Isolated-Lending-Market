@@ -10,7 +10,10 @@ interface ITWAPOracle {
     /// @param period The TWAP period in seconds
     /// @return price The TWAP price normalized to 18 decimals
     /// @return updatedAt The timestamp of the latest observation
-    function getTWAP(address asset, uint32 period) external view returns (uint256 price, uint256 updatedAt);
+    function getTWAP(address asset, uint32 period)
+        external
+        view
+        returns (uint256 price, uint256 updatedAt);
 
     /// @notice Check if this oracle supports the given asset
     /// @param asset The asset to check

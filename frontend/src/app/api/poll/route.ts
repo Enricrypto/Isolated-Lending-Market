@@ -6,7 +6,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 60 // Allow up to 60 seconds for RPC calls
 
-// Secret key for cron job authentication (optional)
+// TO DO: Secret key for cron job authentication (Setup Github action and create a CRON script)
 const CRON_SECRET = process.env.CRON_SECRET
 
 export async function POST(request: NextRequest) {
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
         id: s.id,
         vaultAddress: s.vaultAddress,
         timestamp: s.timestamp.toISOString(),
-        overallSeverity: s.overallSeverity,
+        overallSeverity: s.overallSeverity
       })),
       deletedOldSnapshots: deletedCount
     })

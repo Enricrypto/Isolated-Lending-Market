@@ -96,7 +96,8 @@ contract DeployUpgradeable is Script {
         address[] memory executors = new address[](1);
         executors[0] = multisig;
 
-        MarketTimelock timelock = new MarketTimelock(timelockDelay, proposers, executors);
+        MarketTimelock timelock =
+            new MarketTimelock(timelockDelay, proposers, executors, address(0));
         console.log("   Timelock:", address(timelock));
 
         // 4. Set guardian

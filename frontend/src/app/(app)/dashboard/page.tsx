@@ -14,9 +14,9 @@ import {
   DollarSign,
   Activity,
   TrendingUp,
-  Settings,
   X,
 } from "lucide-react";
+import { TokenIcon } from "@/components/TokenIcon";
 
 const client = createPublicClient({
   chain: sepolia,
@@ -37,7 +37,7 @@ interface MetricCardData {
 }
 
 export default function VaultDashboard() {
-  const { selectedVault, setSelectedVault, activeTab, setActiveTab } =
+  const { selectedVault, setSelectedVault } =
     useAppStore();
   const [metrics, setMetrics] = useState<MetricCardData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +70,7 @@ export default function VaultDashboard() {
             changePositive: true,
             icon: <DollarSign className="w-4 h-4" />,
             color: "#6366f1",
-            subLabel: "Across all vaults",
+            subLabel: "Across all markets",
           },
           {
             label: "Avg. Utilization Rate",
@@ -101,7 +101,7 @@ export default function VaultDashboard() {
             changePositive: true,
             icon: <DollarSign className="w-4 h-4" />,
             color: "#6366f1",
-            subLabel: "Across all vaults",
+            subLabel: "Across all markets",
           },
           {
             label: "Avg. Utilization Rate",
@@ -136,7 +136,7 @@ export default function VaultDashboard() {
 
   return (
     <>
-      <Header title="Vault Dashboard" breadcrumb="Dashboard" />
+      <Header title="Market Dashboard" breadcrumb="Dashboard" />
 
       <div className="flex flex-col xl:flex-row w-full">
         {/* Main Content */}
@@ -150,8 +150,8 @@ export default function VaultDashboard() {
               Dashboard Overview
             </h1>
             <p className="text-slate-400 text-sm max-w-2xl font-light leading-relaxed">
-              Monitor aggregate risk, manage vault strategies, and interact with
-              protocol positions on Sepolia testnet.
+              Monitor aggregate risk and interact with protocol positions on
+              Sepolia testnet.
             </p>
             <div className="absolute -top-20 -left-20 w-64 h-64 bg-indigo-600/10 rounded-full blur-[80px] pointer-events-none mix-blend-screen" />
           </div>
@@ -225,17 +225,14 @@ export default function VaultDashboard() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border border-white/10"
-                    style={{
-                      backgroundColor: `${selectedToken.color}20`,
-                      color: selectedToken.color,
-                    }}
+                    className="w-10 h-10 rounded-xl flex items-center justify-center border border-white/10"
+                    style={{ backgroundColor: `${selectedToken.color}15` }}
                   >
-                    {selectedToken.icon}
+                    <TokenIcon symbol={selectedToken.symbol} size={22} />
                   </div>
                   <div>
                     <h3 className="text-base font-semibold text-white">
-                      {selectedToken.symbol} Vault
+                      {selectedToken.symbol} Market
                     </h3>
                     <span className="text-[10px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 rounded border border-emerald-500/20 uppercase tracking-wider font-bold">
                       Active
@@ -271,37 +268,9 @@ export default function VaultDashboard() {
               </div>
             </div>
 
-            {/* Tab Buttons */}
-            <div className="flex border-b border-midnight-700/50">
-              <button
-                onClick={() => setActiveTab("deposit")}
-                className={`flex-1 py-3 text-xs font-medium text-center transition-all ${
-                  activeTab === "deposit"
-                    ? "text-indigo-400 border-b-2 border-indigo-500"
-                    : "text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                Deposit Flow
-              </button>
-              <button
-                onClick={() => setActiveTab("strategy")}
-                className={`flex-1 py-3 text-xs font-medium text-center transition-all ${
-                  activeTab === "strategy"
-                    ? "text-indigo-400 border-b-2 border-indigo-500"
-                    : "text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                Strategy Config
-              </button>
-            </div>
-
-            {/* Tab Content */}
+            {/* Deposit Form */}
             <div className="p-6 flex-1 overflow-y-auto">
-              {activeTab === "deposit" ? (
-                <DepositForm />
-              ) : (
-                <StrategyPanel vault={selectedVault} />
-              )}
+              <DepositForm />
             </div>
           </aside>
         )}
@@ -310,88 +279,3 @@ export default function VaultDashboard() {
   );
 }
 
-function StrategyPanel({ vault }: { vault: string }) {
-  const strategies = [
-    {
-      name: "Aave V3 Loop",
-      description: "Recursive lending on Aave V3",
-      risk: "Medium",
-      apy: "5.24%",
-      active: vault === "usdc",
-    },
-    {
-      name: "Lido Staking",
-      description: "ETH liquid staking via Lido",
-      risk: "Low",
-      apy: "3.42%",
-      active: vault === "weth",
-    },
-    {
-      name: "Compound Supply",
-      description: "Simple lending on Compound",
-      risk: "Low",
-      apy: "2.10%",
-      active: false,
-    },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <div className="text-xs text-slate-500 mb-3">
-        Select a strategy to connect to this vault.
-      </div>
-
-      {strategies.map((strategy) => (
-        <div
-          key={strategy.name}
-          className={`p-4 rounded-xl border transition-all cursor-pointer ${
-            strategy.active
-              ? "bg-indigo-500/5 border-indigo-500/20"
-              : "bg-midnight-900/30 border-midnight-700/30 hover:border-midnight-600/50"
-          }`}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-white">
-              {strategy.name}
-            </span>
-            {strategy.active && (
-              <span className="text-[10px] px-1.5 py-0.5 bg-indigo-500/10 text-indigo-400 rounded border border-indigo-500/20 uppercase tracking-wider font-bold">
-                Active
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-slate-500 mb-3">{strategy.description}</p>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400">
-              Risk:{" "}
-              <span
-                className={
-                  strategy.risk === "Medium"
-                    ? "text-amber-400"
-                    : "text-emerald-400"
-                }
-              >
-                {strategy.risk}
-              </span>
-            </span>
-            <span className="text-emerald-400 font-mono font-medium">
-              {strategy.apy} APY
-            </span>
-          </div>
-          {!strategy.active && (
-            <button className="w-full mt-3 py-2 text-xs font-medium text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 rounded-lg hover:bg-indigo-500/20 transition-all">
-              Connect Strategy
-            </button>
-          )}
-        </div>
-      ))}
-
-      <div className="pt-3 border-t border-midnight-700/30">
-        <button className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-medium text-slate-400 hover:text-white transition-colors">
-          <Settings className="w-3.5 h-3.5" />
-          Advanced Strategy Config
-        </button>
-      </div>
-    </div>
-  );
-}

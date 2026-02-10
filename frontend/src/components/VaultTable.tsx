@@ -6,7 +6,8 @@ import { sepolia } from "viem/chains";
 import { SEPOLIA_ADDRESSES, TOKENS } from "@/lib/addresses";
 import { VAULT_ABI, IRM_ABI, ORACLE_ROUTER_ABI } from "@/lib/contracts";
 import { useAppStore } from "@/store/useAppStore";
-import { ArrowRight, TrendingUp, Shield, Zap } from "lucide-react";
+import { ArrowRight, TrendingUp, Shield } from "lucide-react";
+import { TokenIcon } from "@/components/TokenIcon";
 
 const client = createPublicClient({
   chain: sepolia,
@@ -19,7 +20,6 @@ interface VaultData {
   symbol: string;
   icon: string;
   color: string;
-  strategy: string;
   tvl: string;
   tvlUsd: string;
   apy: string;
@@ -27,12 +27,6 @@ interface VaultData {
   healthStatus: "low-risk" | "stable" | "idle" | "loading";
   utilization: number;
 }
-
-const MOCK_STRATEGIES: Record<string, string> = {
-  usdc: "Aave V3 Loop",
-  weth: "Lido Staking",
-  wbtc: "Disconnected",
-};
 
 export function VaultTable() {
   const [vaults, setVaults] = useState<VaultData[]>([]);
@@ -98,7 +92,6 @@ export function VaultTable() {
             symbol: TOKENS.USDC.symbol,
             icon: TOKENS.USDC.icon,
             color: TOKENS.USDC.color,
-            strategy: MOCK_STRATEGIES.usdc,
             tvl: `${totalAssetsNum.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
             tvlUsd: `$${(totalAssetsNum * usdcPriceNum).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
             apy: `${baseApy.toFixed(2)}%`,
@@ -112,7 +105,6 @@ export function VaultTable() {
             symbol: TOKENS.WETH.symbol,
             icon: TOKENS.WETH.icon,
             color: TOKENS.WETH.color,
-            strategy: MOCK_STRATEGIES.weth,
             tvl: "1,204",
             tvlUsd: `$${(1204 * wethPriceNum).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
             apy: "3.42%",
@@ -126,7 +118,6 @@ export function VaultTable() {
             symbol: TOKENS.WBTC.symbol,
             icon: TOKENS.WBTC.icon,
             color: TOKENS.WBTC.color,
-            strategy: MOCK_STRATEGIES.wbtc,
             tvl: "12.5",
             tvlUsd: `$${(12.5 * wbtcPriceNum).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
             apy: "0.00%",
@@ -147,7 +138,6 @@ export function VaultTable() {
             symbol: "USDC",
             icon: "$",
             color: "#2775CA",
-            strategy: "Aave V3 Loop",
             tvl: "8,400,000",
             tvlUsd: "$8,400,000",
             apy: "5.24%",
@@ -161,7 +151,6 @@ export function VaultTable() {
             symbol: "WETH",
             icon: "Ξ",
             color: "#627EEA",
-            strategy: "Lido Staking",
             tvl: "1,204",
             tvlUsd: "$2,408,000",
             apy: "3.42%",
@@ -175,7 +164,6 @@ export function VaultTable() {
             symbol: "WBTC",
             icon: "₿",
             color: "#F7931A",
-            strategy: "Disconnected",
             tvl: "12.5",
             tvlUsd: "$500,000",
             apy: "0.00%",
@@ -196,7 +184,7 @@ export function VaultTable() {
     return (
       <div className="glass-panel rounded-2xl overflow-hidden shadow-2xl">
         <div className="px-8 py-6 border-b border-midnight-700/50 bg-white/5">
-          <h3 className="text-lg font-semibold text-white">Vault Overview</h3>
+          <h3 className="text-lg font-semibold text-white">Market Overview</h3>
         </div>
         <div className="p-12 flex items-center justify-center">
           <div className="flex items-center gap-3 text-slate-400">
@@ -213,10 +201,10 @@ export function VaultTable() {
       <div className="px-8 py-6 border-b border-midnight-700/50 flex items-center justify-between bg-white/5">
         <div>
           <h3 className="text-lg font-semibold tracking-wide text-white">
-            Vault Overview
+            Market Overview
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            {vaults.length} active vaults on Sepolia
+            {vaults.length} active markets on Sepolia
           </p>
         </div>
         <button className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 uppercase tracking-wider transition-colors">
@@ -229,7 +217,6 @@ export function VaultTable() {
           <thead>
             <tr className="border-b border-midnight-700/50 text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em]">
               <th className="px-8 py-5">Asset</th>
-              <th className="px-6 py-5">Connected Strategy</th>
               <th className="px-6 py-5">TVL</th>
               <th className="px-6 py-5">Net APY (Sim)</th>
               <th className="px-6 py-5">Health Factor</th>
@@ -250,13 +237,10 @@ export function VaultTable() {
                 <td className="px-8 py-5">
                   <div className="flex items-center gap-4">
                     <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-lg border border-white/10"
-                      style={{
-                        backgroundColor: `${vault.color}20`,
-                        color: vault.color,
-                      }}
+                      className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg border border-white/10"
+                      style={{ backgroundColor: `${vault.color}15` }}
                     >
-                      {vault.icon}
+                      <TokenIcon symbol={vault.symbol} size={22} />
                     </div>
                     <div>
                       <span className="font-medium text-white text-base block">
@@ -266,22 +250,6 @@ export function VaultTable() {
                         {vault.asset}
                       </span>
                     </div>
-                  </div>
-                </td>
-                <td className="px-6 py-5">
-                  <div className="flex items-center gap-2">
-                    {vault.strategy !== "Disconnected" ? (
-                      <>
-                        <Zap className="w-3.5 h-3.5 text-indigo-400" />
-                        <span className="text-slate-300 font-medium">
-                          {vault.strategy}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-slate-500 italic">
-                        Disconnected
-                      </span>
-                    )}
                   </div>
                 </td>
                 <td className="px-6 py-5">
@@ -322,13 +290,9 @@ export function VaultTable() {
                       e.stopPropagation();
                       setSelectedVault(vault.id);
                     }}
-                    className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                      vault.strategy === "Disconnected"
-                        ? "bg-indigo-600 text-white hover:bg-indigo-500"
-                        : "bg-midnight-800 text-slate-300 border border-midnight-700/50 hover:bg-midnight-700 hover:text-white"
-                    }`}
+                    className="px-4 py-1.5 text-xs font-medium rounded-lg transition-all bg-midnight-800 text-slate-300 border border-midnight-700/50 hover:bg-midnight-700 hover:text-white"
                   >
-                    {vault.strategy === "Disconnected" ? "Connect" : "Manage"}
+                    Manage
                   </button>
                 </td>
               </tr>
@@ -382,9 +346,9 @@ function HealthBadge({
   const Icon = c.icon;
 
   return (
-    <div className="flex items-center gap-2">
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       {factor !== "--" && (
-        <span className="font-mono font-medium text-white">{factor}</span>
+        <span className="font-mono font-medium text-white text-sm">{factor}</span>
       )}
       <span
         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
@@ -398,6 +362,6 @@ function HealthBadge({
         <Icon className="w-2.5 h-2.5" />
         {c.label}
       </span>
-    </div>
+    </span>
   );
 }

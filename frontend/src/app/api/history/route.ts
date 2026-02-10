@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSnapshotsInRange, getTimeRangeStart } from "@/lib/db";
+import { getMarketSnapshotsInRange, getTimeRangeStart } from "@/lib/db";
 import { DEFAULT_VAULT } from "@/lib/vault-registry";
 import type { HistoryResponse, HistoryDataPoint, SeverityLevel, TimeRange } from "@/types/metrics";
 
@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type SignalType = "liquidity" | "utilization" | "borrowRate" | "oracle" | "velocity" | "strategy";
+type SignalType = "liquidity" | "utilization" | "borrowRate" | "oracle" | "velocity";
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,12 +18,12 @@ export async function GET(request: NextRequest) {
 
     if (!signal) {
       return NextResponse.json(
-        { error: "Missing 'signal' parameter. Options: liquidity, utilization, borrowRate, oracle, velocity, strategy" },
+        { error: "Missing 'signal' parameter. Options: liquidity, utilization, borrowRate, oracle, velocity" },
         { status: 400 }
       );
     }
 
-    const validSignals: SignalType[] = ["liquidity", "utilization", "borrowRate", "oracle", "velocity", "strategy"];
+    const validSignals: SignalType[] = ["liquidity", "utilization", "borrowRate", "oracle", "velocity"];
     if (!validSignals.includes(signal)) {
       return NextResponse.json(
         { error: `Invalid signal. Options: ${validSignals.join(", ")}` },
@@ -32,9 +32,8 @@ export async function GET(request: NextRequest) {
     }
 
     const startTime = getTimeRangeStart(range);
-    const snapshots = await getSnapshotsInRange(startTime, new Date(), vaultAddress);
+    const snapshots = await getMarketSnapshotsInRange(vaultAddress, startTime);
 
-    // Map snapshots to the requested signal
     const data: HistoryDataPoint[] = snapshots.map((snapshot) => {
       let value: number;
       let severity: SeverityLevel;
@@ -45,11 +44,11 @@ export async function GET(request: NextRequest) {
           severity = snapshot.liquiditySeverity as SeverityLevel;
           break;
         case "utilization":
-          value = Number(snapshot.utilizationRate) * 100; // Convert to percentage
+          value = Number(snapshot.utilizationRate) * 100;
           severity = snapshot.aprConvexitySeverity as SeverityLevel;
           break;
         case "borrowRate":
-          value = Number(snapshot.borrowRate) * 100; // Convert to percentage
+          value = Number(snapshot.borrowRate) * 100;
           severity = snapshot.aprConvexitySeverity as SeverityLevel;
           break;
         case "oracle":
@@ -57,11 +56,7 @@ export async function GET(request: NextRequest) {
           severity = snapshot.oracleSeverity as SeverityLevel;
           break;
         case "velocity":
-          value = snapshot.utilizationDelta ? Number(snapshot.utilizationDelta) * 100 : 0;
-          severity = (snapshot.velocitySeverity ?? 0) as SeverityLevel;
-          break;
-        case "strategy":
-          value = snapshot.strategyAllocPct ? Number(snapshot.strategyAllocPct) * 100 : 0;
+          value = 0;
           severity = 0;
           break;
         default:

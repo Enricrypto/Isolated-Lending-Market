@@ -59,10 +59,7 @@ contract RiskProposer {
     // ==================== EVENTS ====================
 
     event ProposalCreated(
-        bytes32 indexed proposalId,
-        uint8 severity,
-        string description,
-        uint256 timestamp
+        bytes32 indexed proposalId, uint8 severity, string description, uint256 timestamp
     );
     event SeverityThresholdUpdated(uint8 oldThreshold, uint8 newThreshold);
     event CooldownPeriodUpdated(uint256 oldPeriod, uint256 newPeriod);
@@ -276,10 +273,7 @@ contract RiskProposer {
         returns (bytes32 proposalId)
     {
         // Prepare the call data to pause borrowing
-        bytes memory callData = abi.encodeWithSelector(
-            MarketV1.setBorrowingPaused.selector,
-            true
-        );
+        bytes memory callData = abi.encodeWithSelector(MarketV1.setBorrowingPaused.selector, true);
 
         // Create arrays for batch operation (single operation)
         address[] memory targets = new address[](1);
@@ -294,10 +288,7 @@ contract RiskProposer {
         // Generate a unique salt using timestamp and severity
         bytes32 salt = keccak256(
             abi.encodePacked(
-                "RiskProposer",
-                block.timestamp,
-                assessment.severity,
-                assessment.reasonCodes
+                "RiskProposer", block.timestamp, assessment.severity, assessment.reasonCodes
             )
         );
 
@@ -316,13 +307,7 @@ contract RiskProposer {
         );
 
         // Calculate the proposal ID (same formula as TimelockController)
-        proposalId = timelock.hashOperationBatch(
-            targets,
-            values,
-            payloads,
-            bytes32(0),
-            salt
-        );
+        proposalId = timelock.hashOperationBatch(targets, values, payloads, bytes32(0), salt);
     }
 
     /**
@@ -330,11 +315,7 @@ contract RiskProposer {
      * @param proposalId Proposal ID to check
      * @return True if executed or cancelled (not pending)
      */
-    function _isProposalExecutedOrCancelled(bytes32 proposalId)
-        internal
-        view
-        returns (bool)
-    {
+    function _isProposalExecutedOrCancelled(bytes32 proposalId) internal view returns (bool) {
         // If operation is done, it was executed
         if (timelock.isOperationDone(proposalId)) {
             return true;

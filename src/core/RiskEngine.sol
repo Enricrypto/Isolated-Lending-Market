@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import {OracleRouter} from "./OracleRouter.sol";
-import {MarketV1} from "./MarketV1.sol";
-import {Vault} from "./Vault.sol";
-import {InterestRateModel} from "./InterestRateModel.sol";
+import { OracleRouter } from "./OracleRouter.sol";
+import { MarketV1 } from "./MarketV1.sol";
+import { Vault } from "./Vault.sol";
+import { InterestRateModel } from "./InterestRateModel.sol";
 import "../interfaces/IRiskEngine.sol";
 import "../libraries/DataTypes.sol";
 import "../libraries/Errors.sol";
@@ -122,7 +122,11 @@ contract RiskEngine is ProtocolAccessControl {
     /// @notice Compute risk assessment focused on a specific asset's oracle
     /// @param asset The asset to evaluate
     /// @return assessment The risk assessment
-    function assessAssetRisk(address asset) external view returns (DataTypes.RiskAssessment memory assessment) {
+    function assessAssetRisk(address asset)
+        external
+        view
+        returns (DataTypes.RiskAssessment memory assessment)
+    {
         DataTypes.DimensionScore memory scores;
         uint256 reasons;
 
@@ -156,7 +160,11 @@ contract RiskEngine is ProtocolAccessControl {
     /// @notice Compute risk assessment for a specific user position
     /// @param user The user whose position to evaluate
     /// @return assessment The risk assessment for the user
-    function assessUserRisk(address user) external view returns (DataTypes.RiskAssessment memory assessment) {
+    function assessUserRisk(address user)
+        external
+        view
+        returns (DataTypes.RiskAssessment memory assessment)
+    {
         DataTypes.DimensionScore memory scores;
         uint256 reasons;
 
@@ -251,7 +259,11 @@ contract RiskEngine is ProtocolAccessControl {
     /// @notice Evaluate an asset's oracle using the hierarchical logic
     /// @param asset The asset to evaluate
     /// @return evaluation Full oracle evaluation result
-    function evaluateOracle(address asset) external view returns (DataTypes.OracleEvaluation memory evaluation) {
+    function evaluateOracle(address asset)
+        external
+        view
+        returns (DataTypes.OracleEvaluation memory evaluation)
+    {
         return oracleRouter.evaluate(asset);
     }
 
@@ -260,7 +272,11 @@ contract RiskEngine is ProtocolAccessControl {
     /// @notice Convert dimension scores to severity level
     /// @param scores The four dimension scores
     /// @return severity 0-3 severity level
-    function computeSeverity(DataTypes.DimensionScore memory scores) external pure returns (uint8 severity) {
+    function computeSeverity(DataTypes.DimensionScore memory scores)
+        external
+        pure
+        returns (uint8 severity)
+    {
         return _computeSeverityFromScores(scores);
     }
 
@@ -294,7 +310,11 @@ contract RiskEngine is ProtocolAccessControl {
     // ==================== INTERNAL: DIMENSION SCORING ====================
 
     /// @notice Compute oracle risk score for the loan asset
-    function _computeOracleRiskScore(uint256 reasons) internal view returns (uint8 score, uint256 updatedReasons) {
+    function _computeOracleRiskScore(uint256 reasons)
+        internal
+        view
+        returns (uint8 score, uint256 updatedReasons)
+    {
         updatedReasons = reasons;
 
         address loanAsset = address(market.loanAsset());
@@ -304,7 +324,9 @@ contract RiskEngine is ProtocolAccessControl {
 
         if (eval.isStale) updatedReasons |= REASON_ORACLE_STALE;
         if (eval.sourceUsed == 2) updatedReasons |= REASON_ORACLE_LKG_FALLBACK;
-        if (eval.deviation > config.oracleDeviationTolerance) updatedReasons |= REASON_ORACLE_DEVIATION;
+        if (eval.deviation > config.oracleDeviationTolerance) {
+            updatedReasons |= REASON_ORACLE_DEVIATION;
+        }
         if (eval.confidence == 0) {
             updatedReasons |= REASON_ORACLE_FAILURE;
             score = MAX_SCORE;
@@ -312,7 +334,11 @@ contract RiskEngine is ProtocolAccessControl {
     }
 
     /// @notice Compute liquidity risk score from utilization and available liquidity
-    function _computeLiquidityRiskScore(uint256 reasons) internal view returns (uint8 score, uint256 updatedReasons) {
+    function _computeLiquidityRiskScore(uint256 reasons)
+        internal
+        view
+        returns (uint8 score, uint256 updatedReasons)
+    {
         updatedReasons = reasons;
         DataTypes.RiskEngineConfig memory cfg = config;
 
@@ -344,7 +370,11 @@ contract RiskEngine is ProtocolAccessControl {
     }
 
     /// @notice Compute solvency risk score from bad debt and pause state
-    function _computeSolvencyRiskScore(uint256 reasons) internal view returns (uint8 score, uint256 updatedReasons) {
+    function _computeSolvencyRiskScore(uint256 reasons)
+        internal
+        view
+        returns (uint8 score, uint256 updatedReasons)
+    {
         updatedReasons = reasons;
         DataTypes.RiskEngineConfig memory cfg = config;
 
@@ -376,7 +406,11 @@ contract RiskEngine is ProtocolAccessControl {
     }
 
     /// @notice Compute strategy risk score from allocation and migration state
-    function _computeStrategyRiskScore(uint256 reasons) internal view returns (uint8 score, uint256 updatedReasons) {
+    function _computeStrategyRiskScore(uint256 reasons)
+        internal
+        view
+        returns (uint8 score, uint256 updatedReasons)
+    {
         updatedReasons = reasons;
         DataTypes.RiskEngineConfig memory cfg = config;
 
@@ -429,14 +463,20 @@ contract RiskEngine is ProtocolAccessControl {
     function _validateConfig(DataTypes.RiskEngineConfig memory _config) internal pure {
         if (_config.oracleFreshnessThreshold == 0) revert Errors.InvalidRiskThreshold();
         if (_config.oracleDeviationTolerance == 0) revert Errors.InvalidRiskThreshold();
-        if (_config.oracleCriticalDeviation <= _config.oracleDeviationTolerance) revert Errors.InvalidRiskThreshold();
+        if (_config.oracleCriticalDeviation <= _config.oracleDeviationTolerance) {
+            revert Errors.InvalidRiskThreshold();
+        }
         if (_config.lkgDecayHalfLife == 0) revert Errors.InvalidHalfLife();
         if (_config.lkgMaxAge == 0) revert Errors.InvalidMaxAge();
         if (_config.utilizationWarning == 0) revert Errors.InvalidRiskThreshold();
-        if (_config.utilizationCritical <= _config.utilizationWarning) revert Errors.InvalidRiskThreshold();
+        if (_config.utilizationCritical <= _config.utilizationWarning) {
+            revert Errors.InvalidRiskThreshold();
+        }
         if (_config.healthFactorWarning == 0) revert Errors.InvalidRiskThreshold();
         if (_config.healthFactorCritical == 0) revert Errors.InvalidRiskThreshold();
-        if (_config.healthFactorCritical >= _config.healthFactorWarning) revert Errors.InvalidRiskThreshold();
+        if (_config.healthFactorCritical >= _config.healthFactorWarning) {
+            revert Errors.InvalidRiskThreshold();
+        }
         if (_config.badDebtThreshold == 0) revert Errors.InvalidRiskThreshold();
         if (_config.strategyAllocationCap == 0 || _config.strategyAllocationCap > PRECISION) {
             revert Errors.InvalidRiskThreshold();

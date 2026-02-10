@@ -162,6 +162,27 @@ export const MARKET_ABI = [
     stateMutability: "view",
     type: "function",
   },
+  {
+    inputs: [],
+    name: "totalBorrowsWithInterest",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "globalBorrowIndex",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "user", type: "address" }],
+    name: "getUserTotalDebt",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
 ] as const;
 
 // ==================== VAULT ABI (ERC4626) ====================

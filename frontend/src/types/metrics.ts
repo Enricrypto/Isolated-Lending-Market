@@ -7,15 +7,16 @@ export interface SeverityInfo {
   color: string;
 }
 
-// Vault configuration for multi-vault polling
+// Market configuration for multi-market polling
 export interface VaultConfig {
   vaultAddress: `0x${string}`;
   marketAddress: `0x${string}`;
   irmAddress: `0x${string}`;
   oracleRouterAddress: `0x${string}`;
-  strategyAddress: `0x${string}`;
   loanAsset: `0x${string}`;
+  loanAssetDecimals: number;
   label: string;
+  symbol: string;
 }
 
 // Liquidity Depth signal
@@ -58,7 +59,6 @@ export interface MetricSnapshot {
   id?: number;
   timestamp: Date;
   vaultAddress: string;
-  strategyAddress: string;
 
   // Liquidity
   availableLiquidity: bigint;
@@ -80,11 +80,6 @@ export interface MetricSnapshot {
   oracleIsStale: boolean;
   oracleSeverity: SeverityLevel;
 
-  // Strategy
-  strategyTotalAssets: bigint | null;
-  strategyAllocPct: number | null;
-  isStrategyChanging: boolean;
-
   // Velocity
   utilizationDelta: number | null;
   velocitySeverity: SeverityLevel | null;
@@ -94,12 +89,13 @@ export interface MetricSnapshot {
 }
 
 // API response types
+// All amounts are normalized (human-readable floats, e.g. 1500.5 USDC not raw 1500500000)
 export interface CurrentMetricsResponse {
   vaultAddress: string;
   timestamp: string;
   liquidity: {
-    available: string;
-    totalBorrows: string;
+    available: number;
+    totalBorrows: number;
     depthRatio: number;
     severity: SeverityLevel;
   };
@@ -110,7 +106,7 @@ export interface CurrentMetricsResponse {
     severity: SeverityLevel;
   };
   oracle: {
-    price: string;
+    price: number;
     confidence: number;
     riskScore: number;
     isStale: boolean;
@@ -120,11 +116,6 @@ export interface CurrentMetricsResponse {
     delta: number | null;
     severity: SeverityLevel | null;
   };
-  strategy: {
-    totalAssets: string;
-    allocationPct: number;
-    isChanging: boolean;
-  } | null;
   overall: SeverityLevel;
 }
 
@@ -142,3 +133,25 @@ export interface HistoryResponse {
 
 // Time range for queries
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
+
+// Per-vault summary for protocol overview
+export interface VaultSummary {
+  vaultAddress: string;
+  label: string;
+  symbol: string;
+  overallSeverity: SeverityLevel;
+  utilization: number;
+  totalSupply: number;
+  totalBorrows: number;
+  oraclePrice: number;
+  lastUpdated: string;
+}
+
+// Protocol-level overview (aggregated across all vaults)
+export interface ProtocolOverviewResponse {
+  vaults: VaultSummary[];
+  protocolSeverity: SeverityLevel;
+  totalTVL: number;
+  totalBorrows: number;
+  timestamp: string;
+}

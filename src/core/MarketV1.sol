@@ -175,12 +175,31 @@ contract MarketV1 is
         if (newOwner == address(0)) revert Errors.ZeroAddress();
         address oldOwner = owner;
 
-        // Grant all admin roles to new owner
+        // ================================
+        // Grant roles to new owner
+        // ================================
         _grantRole(DEFAULT_ADMIN_ROLE, newOwner);
         _grantRole(ProtocolRoles.MARKET_ADMIN_ROLE, newOwner);
         _grantRole(ProtocolRoles.UPGRADER_ROLE, newOwner);
 
+        // ================================
+        // Revoke roles from old owner
+        // ================================
+        if (hasRole(DEFAULT_ADMIN_ROLE, oldOwner)) {
+            _revokeRole(DEFAULT_ADMIN_ROLE, oldOwner);
+        }
+
+        if (hasRole(ProtocolRoles.MARKET_ADMIN_ROLE, oldOwner)) {
+            _revokeRole(ProtocolRoles.MARKET_ADMIN_ROLE, oldOwner);
+        }
+
+        if (hasRole(ProtocolRoles.UPGRADER_ROLE, oldOwner)) {
+            _revokeRole(ProtocolRoles.UPGRADER_ROLE, oldOwner);
+        }
+
+        // ================================
         // Update legacy storage variable
+        // ================================
         owner = newOwner;
 
         emit Events.OwnershipTransferred(oldOwner, newOwner);
@@ -311,11 +330,23 @@ contract MarketV1 is
      *      Guardian can pause but only MARKET_ADMIN_ROLE can unpause.
      */
     function setBorrowingPaused(bool _paused) external onlyMarketAdminOrGuardian {
-        // Guardian can only pause, not unpause
-        if (!_paused && !hasRole(ProtocolRoles.MARKET_ADMIN_ROLE, msg.sender)) {
-            revert Errors.OnlyOwner(); // Only admin can unpause
+        // Restrict pause to the guardian CONTRACT only
+        if (_paused) {
+            if (!hasRole(ProtocolRoles.GUARDIAN_ROLE, msg.sender)) {
+                revert Errors.OnlyGuardianContract();
+            }
         }
+
+        // Restrict unpause to admin/timelock
+        if (!_paused) {
+            if (!hasRole(ProtocolRoles.MARKET_ADMIN_ROLE, msg.sender)) {
+                revert Errors.OnlyAdminCanUnpause();
+            }
+        }
+
+        // Set state
         paused = _paused;
+
         emit Events.BorrowingPausedChanged(_paused);
     }
 

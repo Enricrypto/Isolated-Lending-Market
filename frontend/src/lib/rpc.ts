@@ -10,7 +10,25 @@ export const client = createPublicClient({
   transport: http(process.env.RPC_URL),
 });
 
-// Helper to format bigint values for display
+// --- Decimal Normalization Helpers ---
+
+// WAD constant (18 decimals) — used by IRM rates, oracle confidence/deviation
+export const WAD = 18;
+
+// Convert raw BigInt to human-readable number.
+// e.g. normalize(1500000000n, 6) → 1500.0  (USDC with 6 decimals)
+// e.g. normalize(800000000000000000n, WAD) → 0.8  (80% utilization)
+export function normalize(raw: bigint, decimals: number): number {
+  return Number(raw) / 10 ** decimals;
+}
+
+// Convert human-readable number back to raw BigInt.
+// e.g. denormalize(1500.0, 6) → 1500000000n
+export function denormalize(value: number, decimals: number): bigint {
+  return BigInt(Math.round(value * 10 ** decimals));
+}
+
+// Helper to format bigint values for display (string output with full precision)
 export function formatUnits(value: bigint, decimals: number): string {
   const divisor = BigInt(10 ** decimals);
   const integerPart = value / divisor;
@@ -24,14 +42,4 @@ export function formatUnits(value: bigint, decimals: number): string {
   // Trim trailing zeros
   const trimmed = fractionalStr.replace(/0+$/, "");
   return `${integerPart}.${trimmed}`;
-}
-
-// Convert 18-decimal bigint to number (for percentages, ratios)
-export function toNumber(value: bigint, decimals: number = 18): number {
-  return Number(value) / 10 ** decimals;
-}
-
-// Convert number to 18-decimal bigint
-export function toBigInt(value: number, decimals: number = 18): bigint {
-  return BigInt(Math.floor(value * 10 ** decimals));
 }

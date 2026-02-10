@@ -93,7 +93,9 @@ contract AccessControlTest is Test {
         vault = new Vault(usdc, address(0), address(strategy), admin, "Vault USDC", "vUSDC");
 
         // Deploy IRM
-        irm = new InterestRateModel(0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), admin);
+        irm = new InterestRateModel(
+            0.02e18, 0.8e18, 0.04e18, 0.6e18, address(vault), address(0), admin
+        );
 
         // Deploy market via proxy
         MarketV1 implementation = new MarketV1();
@@ -124,7 +126,7 @@ contract AccessControlTest is Test {
             oracleDeviationTolerance: 0.02e18,
             oracleCriticalDeviation: 0.05e18,
             lkgDecayHalfLife: 1800,
-            lkgMaxAge: 86400,
+            lkgMaxAge: 86_400,
             utilizationWarning: 0.85e18,
             utilizationCritical: 0.95e18,
             healthFactorWarning: 1.2e18,
@@ -133,12 +135,7 @@ contract AccessControlTest is Test {
             strategyAllocationCap: 0.9e18
         });
         riskEngine = new RiskEngine(
-            address(market),
-            address(vault),
-            address(oracleRouter),
-            address(irm),
-            admin,
-            riskConfig
+            address(market), address(vault), address(oracleRouter), address(irm), admin, riskConfig
         );
 
         // Deploy Timelock (2 day delay)
@@ -146,7 +143,7 @@ contract AccessControlTest is Test {
         proposers[0] = admin;
         address[] memory executors = new address[](1);
         executors[0] = admin;
-        timelock = new MarketTimelock(2 days, proposers, executors);
+        timelock = new MarketTimelock(2 days, proposers, executors, address(this));
 
         // Deploy EmergencyGuardian
         emergencyGuardian = new EmergencyGuardian(address(market), guardian);
@@ -162,12 +159,12 @@ contract AccessControlTest is Test {
     function test_Market_OnlyMarketAdminCanSetParameters() public {
         // Admin should succeed
         vm.prank(admin);
-        market.setMarketParameters(0.80e18, 0.06e18, 0.15e18);
+        market.setMarketParameters(0.8e18, 0.06e18, 0.15e18);
 
         // Random user should fail
         vm.expectRevert();
         vm.prank(randomUser);
-        market.setMarketParameters(0.80e18, 0.06e18, 0.15e18);
+        market.setMarketParameters(0.8e18, 0.06e18, 0.15e18);
     }
 
     function test_Market_OnlyMarketAdminCanAddCollateral() public {
@@ -249,12 +246,12 @@ contract AccessControlTest is Test {
     function test_OracleRouter_OnlyOracleManagerCanSetParams() public {
         // Admin should succeed
         vm.prank(admin);
-        oracleRouter.setOracleParams(0.03e18, 0.08e18, 3600, 172800);
+        oracleRouter.setOracleParams(0.03e18, 0.08e18, 3600, 172_800);
 
         // Random user should fail
         vm.expectRevert();
         vm.prank(randomUser);
-        oracleRouter.setOracleParams(0.03e18, 0.08e18, 3600, 172800);
+        oracleRouter.setOracleParams(0.03e18, 0.08e18, 3600, 172_800);
     }
 
     // ==================== INTEREST RATE MODEL ACCESS CONTROL TESTS ====================
@@ -276,7 +273,7 @@ contract AccessControlTest is Test {
 
         vm.expectRevert();
         vm.prank(randomUser);
-        irm.setOptimalUtilization(0.70e18);
+        irm.setOptimalUtilization(0.7e18);
     }
 
     function test_IRM_OnlyRateManagerCanSetSlopes() public {
@@ -303,9 +300,9 @@ contract AccessControlTest is Test {
             oracleDeviationTolerance: 0.03e18,
             oracleCriticalDeviation: 0.08e18,
             lkgDecayHalfLife: 1800,
-            lkgMaxAge: 86400,
-            utilizationWarning: 0.80e18,
-            utilizationCritical: 0.90e18,
+            lkgMaxAge: 86_400,
+            utilizationWarning: 0.8e18,
+            utilizationCritical: 0.9e18,
             healthFactorWarning: 1.2e18,
             healthFactorCritical: 1.05e18,
             badDebtThreshold: 0.02e18,
@@ -440,10 +437,7 @@ contract AccessControlTest is Test {
 
         bytes[] memory payloads = new bytes[](1);
         payloads[0] = abi.encodeWithSelector(
-            MarketV1.setMarketParameters.selector,
-            0.80e18,
-            0.06e18,
-            0.12e18
+            MarketV1.setMarketParameters.selector, 0.8e18, 0.06e18, 0.12e18
         );
 
         bytes32 salt = keccak256("test-proposal-1");
@@ -454,7 +448,8 @@ contract AccessControlTest is Test {
         timelock.scheduleBatch(targets, values, payloads, bytes32(0), salt, delay);
 
         // Get proposal ID
-        bytes32 proposalId = timelock.hashOperationBatch(targets, values, payloads, bytes32(0), salt);
+        bytes32 proposalId =
+            timelock.hashOperationBatch(targets, values, payloads, bytes32(0), salt);
 
         // Proposal should be pending
         assertTrue(timelock.isOperationPending(proposalId));
@@ -477,6 +472,6 @@ contract AccessControlTest is Test {
 
         // Verify parameters were updated
         (uint256 lltv,,) = market.getMarketParameters();
-        assertEq(lltv, 0.80e18);
+        assertEq(lltv, 0.8e18);
     }
 }

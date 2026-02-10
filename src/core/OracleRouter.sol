@@ -9,7 +9,7 @@ import "../libraries/DataTypes.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
 import "../access/ProtocolAccessControl.sol";
-import {PriceOracle} from "./PriceOracle.sol";
+import { PriceOracle } from "./PriceOracle.sol";
 
 /// @title OracleRouter
 /// @notice Hierarchical oracle evaluation with Chainlink primary, DEX TWAP cross-validation, and LKG fallback
@@ -66,7 +66,7 @@ contract OracleRouter is ProtocolAccessControl {
         deviationTolerance = 0.02e18; // 2%
         criticalDeviation = 0.05e18; // 5%
         lkgDecayHalfLife = 1800; // 30 minutes
-        lkgMaxAge = 86400; // 24 hours
+        lkgMaxAge = 86_400; // 24 hours
     }
 
     // Note: Role-based modifiers inherited from ProtocolAccessControl
@@ -76,7 +76,11 @@ contract OracleRouter is ProtocolAccessControl {
     /// @notice Evaluate oracle for an asset using the hierarchical logic
     /// @param asset The asset to evaluate
     /// @return eval Full oracle evaluation result
-    function evaluate(address asset) external view returns (DataTypes.OracleEvaluation memory eval) {
+    function evaluate(address asset)
+        external
+        view
+        returns (DataTypes.OracleEvaluation memory eval)
+    {
         // Step 1: Try primary Chainlink oracle
         (bool chainlinkOk, uint256 chainlinkPrice, bool isFresh) = _tryChainlink(asset);
 
@@ -161,9 +165,7 @@ contract OracleRouter is ProtocolAccessControl {
         uint256 price = priceOracle.getLatestPrice(asset);
 
         lkgPrices[asset] = DataTypes.LKGPrice({
-            price: price,
-            timestamp: uint64(block.timestamp),
-            updatedAt: uint64(block.timestamp)
+            price: price, timestamp: uint64(block.timestamp), updatedAt: uint64(block.timestamp)
         });
 
         emit Events.LKGPriceUpdated(asset, price, uint64(block.timestamp));
@@ -212,7 +214,9 @@ contract OracleRouter is ProtocolAccessControl {
         uint256 _lkgDecayHalfLife,
         uint256 _lkgMaxAge
     ) external onlyOracleManager {
-        if (_deviationTolerance == 0 || _deviationTolerance > PRECISION) revert Errors.InvalidRiskThreshold();
+        if (_deviationTolerance == 0 || _deviationTolerance > PRECISION) {
+            revert Errors.InvalidRiskThreshold();
+        }
         if (_criticalDeviation <= _deviationTolerance) revert Errors.InvalidRiskThreshold();
         if (_lkgDecayHalfLife == 0) revert Errors.InvalidHalfLife();
         if (_lkgMaxAge == 0) revert Errors.InvalidMaxAge();
@@ -244,7 +248,11 @@ contract OracleRouter is ProtocolAccessControl {
     /// @return ok Whether Chainlink returned a valid price
     /// @return price The price (18 decimals) if ok
     /// @return isFresh Whether the price passes the freshness check
-    function _tryChainlink(address asset) internal view returns (bool ok, uint256 price, bool isFresh) {
+    function _tryChainlink(address asset)
+        internal
+        view
+        returns (bool ok, uint256 price, bool isFresh)
+    {
         if (!priceOracle.hasPriceFeed(asset)) {
             return (false, 0, false);
         }
@@ -263,7 +271,9 @@ contract OracleRouter is ProtocolAccessControl {
         if (feedAddr == address(0)) return (false, 0, false);
 
         AggregatorV3Interface feed = AggregatorV3Interface(feedAddr);
-        try feed.latestRoundData() returns (uint80 roundId, int256, uint256, uint256 updatedAt, uint80 answeredInRound) {
+        try feed.latestRoundData() returns (
+            uint80 roundId, int256, uint256, uint256 updatedAt, uint80 answeredInRound
+        ) {
             if (updatedAt == 0 || answeredInRound < roundId) {
                 isFresh = false;
             } else {
@@ -349,7 +359,11 @@ contract OracleRouter is ProtocolAccessControl {
     /// @notice Fallback to LKG price with exponential confidence decay (Step 3)
     /// @param asset The asset being evaluated
     /// @return eval The oracle evaluation result
-    function _lkgFallback(address asset) internal view returns (DataTypes.OracleEvaluation memory eval) {
+    function _lkgFallback(address asset)
+        internal
+        view
+        returns (DataTypes.OracleEvaluation memory eval)
+    {
         DataTypes.LKGPrice memory lkg = lkgPrices[asset];
 
         eval.sourceUsed = 2;

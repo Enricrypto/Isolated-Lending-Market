@@ -19,3 +19,9 @@ node_modules/
 # Next.js
 .next/
 out/
+
+# Prisma generated client
+frontend/prisma/generated/
+
+# Lockfile duplicates
+frontend/pnpm-lock.yaml

@@ -16,12 +16,18 @@ interface IRiskEngine {
     /// @notice Compute risk assessment for a specific asset's oracle
     /// @param asset The asset to evaluate oracle risk for
     /// @return assessment The risk assessment focused on the given asset
-    function assessAssetRisk(address asset) external view returns (DataTypes.RiskAssessment memory assessment);
+    function assessAssetRisk(address asset)
+        external
+        view
+        returns (DataTypes.RiskAssessment memory assessment);
 
     /// @notice Compute risk assessment for a specific user position
     /// @param user The user whose position to evaluate
     /// @return assessment The risk assessment for the user
-    function assessUserRisk(address user) external view returns (DataTypes.RiskAssessment memory assessment);
+    function assessUserRisk(address user)
+        external
+        view
+        returns (DataTypes.RiskAssessment memory assessment);
 
     // ==================== INDIVIDUAL DIMENSIONS ====================
 
@@ -51,7 +57,10 @@ interface IRiskEngine {
     /// @notice Evaluate an asset's oracle using the hierarchical logic
     /// @param asset The asset to evaluate
     /// @return evaluation Full oracle evaluation result
-    function evaluateOracle(address asset) external view returns (DataTypes.OracleEvaluation memory evaluation);
+    function evaluateOracle(address asset)
+        external
+        view
+        returns (DataTypes.OracleEvaluation memory evaluation);
 
     // ==================== CONFIGURATION ====================
 
@@ -68,7 +77,10 @@ interface IRiskEngine {
     /// @notice Convert dimension scores to severity level
     /// @param scores The four dimension scores
     /// @return severity 0-3 severity level
-    function computeSeverity(DataTypes.DimensionScore memory scores) external pure returns (uint8 severity);
+    function computeSeverity(DataTypes.DimensionScore memory scores)
+        external
+        pure
+        returns (uint8 severity);
 
     // ==================== STATE VARIABLES ====================
 

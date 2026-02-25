@@ -1,11 +1,22 @@
 // Sepolia Testnet Contract Addresses
-// Deployed via DeployAll.s.sol
+// USDC Market: DeployAll.s.sol (Jan 30, 2026)
+// WETH + WBTC Markets: DeployMarkets.s.sol (Feb 25, 2026)
 
 export const SEPOLIA_ADDRESSES = {
-  // Core Protocol Contracts (Deployed Jan 30, 2026 - Real Chainlink Feeds)
+  // ── USDC Market (Jan 30, 2026) ────────────────────────────────────────────
   market: "0x12f8DA89619C40553d9eA50aAce593cEb2f3eFcE" as const,
   marketImplementation: "0x217547Af931896123Df66354Ce285C13bCD379E5" as const,
   vault: "0xE8323c3d293f81C71232023367Bada21137C055E" as const,
+
+  // ── WETH Market (Feb 25, 2026) ────────────────────────────────────────────
+  wethMarket: "0x9ef4141b954947800A47F46D11a6B2f366d1673b" as const,
+  wethVault:  "0xbbc4c7FbCcF0faa27821c4F44C01D3F81C088070" as const,
+  wethIrm:    "0xD886efbc840024A7758c8fefF115dBd5B1986A04" as const,
+
+  // ── WBTC Market (Feb 25, 2026) ────────────────────────────────────────────
+  wbtcMarket: "0xD1928f50281c65fBC73c8a644D259F1A6633AC56" as const,
+  wbtcVault:  "0xBCB5fcA37f87a97eB1C5d6c9a92749e0F41161f0" as const,
+  wbtcIrm:    "0xaDEf01C0aD41b0e5e6AF74e885cD1805dC4FA8E9" as const,
   oracle: "0x02dC7cA9865cDbE9D2930A9D50A79fe31BB4377E" as const,
   oracleRouter: "0xf0a440147AAC2FF4349ca623f8bf9BD96EA43843" as const,
   irm: "0x7Eca31bB8e6C9369b34cacf2dF32E815EbdcAdB2" as const,

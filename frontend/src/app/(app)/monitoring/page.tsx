@@ -8,6 +8,7 @@ import type {
   ProtocolOverviewResponse,
   SeverityLevel
 } from "@/types/metrics"
+import { apiBase } from "@/lib/apiUrl"
 import { formatLargeNumber, formatPrice } from "@/lib/format"
 import {
   AlertTriangle,
@@ -63,9 +64,10 @@ function DashboardContent() {
 
   const fetchMetrics = useCallback(async () => {
     try {
+      const base = apiBase()
       const [metricsRes, protocolRes] = await Promise.all([
-        fetch(`/api/metrics?vault=${vaultAddress}`),
-        fetch("/api/vaults")
+        fetch(base ? `${base}/metrics?vault=${vaultAddress}` : `/api/metrics?vault=${vaultAddress}`),
+        fetch(base ? `${base}/markets` : "/api/vaults"),
       ])
       if (metricsRes.ok) {
         setMetrics(await metricsRes.json())

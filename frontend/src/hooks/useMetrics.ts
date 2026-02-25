@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import type { CurrentMetricsResponse, HistoryResponse, TimeRange } from "@/types/metrics"
+import { apiBase } from "@/lib/apiUrl"
 
 interface UseMetricsOptions {
   vault?: string
@@ -27,14 +28,19 @@ export function useMetrics({ vault, signal, range }: UseMetricsOptions = {}): Us
       setLoading(true)
       setError(null)
       try {
+        const base = apiBase()
         const vaultParam = vault ? `?vault=${vault}` : ""
-        const metricsUrl = `/api/metrics${vaultParam}`
+        // Backend: /metrics  |  Fallback: /api/metrics
+        const metricsUrl = base ? `${base}/metrics${vaultParam}` : `/api/metrics${vaultParam}`
 
         const promises: Promise<Response>[] = [fetch(metricsUrl)]
         if (signal && range) {
           const historyParams = new URLSearchParams({ signal, range })
           if (vault) historyParams.set("vault", vault)
-          promises.push(fetch(`/api/history?${historyParams.toString()}`))
+          const historyUrl = base
+            ? `${base}/history?${historyParams.toString()}`
+            : `/api/history?${historyParams.toString()}`
+          promises.push(fetch(historyUrl))
         }
 
         const results = await Promise.all(promises)

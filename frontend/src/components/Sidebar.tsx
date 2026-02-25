@@ -9,10 +9,9 @@ import {
   Settings,
   ShieldAlert,
   ChevronDown,
-  User,
   FlaskConical,
 } from "lucide-react";
-import { useAccount } from "wagmi";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 const coreNavigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -27,12 +26,6 @@ const adminNavigation = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { address, isConnected } = useAccount();
-
-  // Format address for display
-  const formatAddress = (addr: string) => {
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-  };
 
   return (
     <aside className="fixed top-0 left-0 w-72 h-screen border-r border-midnight-700/50 flex-col bg-midnight-950/80 backdrop-blur-xl hidden md:flex z-50">
@@ -133,25 +126,39 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* User / Network */}
+      {/* Wallet — RainbowKit Custom Button */}
       <div className="p-4 border-t border-midnight-700/50 flex-shrink-0">
-        <button className="w-full flex items-center justify-between p-2 rounded-lg bg-midnight-900 border border-midnight-700/50 hover:border-indigo-500/30 transition-all group">
-          <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-              <User className="w-3.5 h-3.5" />
-            </div>
-            <div className="flex flex-col items-start">
-              <span className="text-xs font-medium text-slate-200">
-                {isConnected && address ? formatAddress(address) : "Not Connected"}
-              </span>
-              <span className="text-[10px] text-emerald-500 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                Sepolia
-              </span>
-            </div>
-          </div>
-          <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
-        </button>
+        <ConnectButton.Custom>
+          {({ account, chain, openAccountModal, openConnectModal, mounted }) => {
+            const connected = mounted && account && chain;
+            return (
+              <button
+                onClick={connected ? openAccountModal : openConnectModal}
+                className="w-full flex items-center justify-between p-2 rounded-lg bg-midnight-900 border border-midnight-700/50 hover:border-indigo-500/30 transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center overflow-hidden">
+                    {connected && account.ensAvatar ? (
+                      <img src={account.ensAvatar} alt="avatar" className="w-full h-full object-cover rounded-full" />
+                    ) : (
+                      <Wallet className="w-3.5 h-3.5" />
+                    )}
+                  </div>
+                  <div className="flex flex-col items-start">
+                    <span className="text-xs font-medium text-slate-200">
+                      {connected ? account.displayName : "Not Connected"}
+                    </span>
+                    <span className="text-[10px] text-emerald-500 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      Sepolia
+                    </span>
+                  </div>
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
+              </button>
+            );
+          }}
+        </ConnectButton.Custom>
       </div>
     </aside>
   );

@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   ChevronDown,
   User,
+  FlaskConical,
 } from "lucide-react";
 import { useAccount } from "wagmi";
 
@@ -120,6 +121,17 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Testnet Banner */}
+      <div className="mx-4 mb-3 px-3 py-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20 flex items-start gap-2.5 flex-shrink-0">
+        <FlaskConical className="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0" />
+        <div>
+          <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Testnet Only</p>
+          <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+            This protocol runs on Sepolia. No real funds.
+          </p>
+        </div>
+      </div>
 
       {/* User / Network */}
       <div className="p-4 border-t border-midnight-700/50 flex-shrink-0">

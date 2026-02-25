@@ -223,7 +223,7 @@ contract DeployAll is Script {
 
         // 18c. Transfer Guardian ownership to Timelock. 
         // Transfer Guardian ownership. Now only Timelock can manage guardians.
-        EmergencyGuardian(d.guardian).transferOwnership(d.timelock);
+        EmergencyGuardian(d.emergencyGuardian).transferOwnership(d.timelock);
 
         // 18d. Renounce deployer's admin role on Timelock (no more role changes after this).
         // Renounce deployer admin role. Now deployer has zero power forever.

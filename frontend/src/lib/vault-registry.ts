@@ -40,17 +40,43 @@
 
 import type { VaultConfig } from "@/types/metrics"
 
+// Shared across all markets (deployed by DeployAll.s.sol)
+const ORACLE_ROUTER = "0xf0a440147AAC2FF4349ca623f8bf9BD96EA43843"
+
 export const VAULT_REGISTRY: VaultConfig[] = [
+  // ── USDC Market (deployed Jan 30, 2026) ──────────────────────────────────
   {
     vaultAddress: "0xE8323c3d293f81C71232023367Bada21137C055E",
     marketAddress: "0x12f8DA89619C40553d9eA50aAce593cEb2f3eFcE",
     irmAddress: "0x7Eca31bB8e6C9369b34cacf2dF32E815EbdcAdB2",
-    oracleRouterAddress: "0xf0a440147AAC2FF4349ca623f8bf9BD96EA43843",
+    oracleRouterAddress: ORACLE_ROUTER,
     loanAsset: "0xa23575D09B55c709590F7f5507b246043A8cF49b",
     loanAssetDecimals: 6,
     label: "USDC Market",
     symbol: "USDC"
-  }
+  },
+  // ── WETH Market (deployed by DeployMarkets.s.sol — fill in after broadcast)
+  // {
+  //   vaultAddress:        "WETH_VAULT from script output",
+  //   marketAddress:       "WETH_MARKET from script output",
+  //   irmAddress:          "WETH_IRM from script output",
+  //   oracleRouterAddress: ORACLE_ROUTER,
+  //   loanAsset:           "0x655Af45748C1116B95339d189B1556c92d73ff77",
+  //   loanAssetDecimals:   18,
+  //   label:               "WETH Market",
+  //   symbol:              "WETH"
+  // },
+  // ── WBTC Market (deployed by DeployMarkets.s.sol — fill in after broadcast)
+  // {
+  //   vaultAddress:        "WBTC_VAULT from script output",
+  //   marketAddress:       "WBTC_MARKET from script output",
+  //   irmAddress:          "WBTC_IRM from script output",
+  //   oracleRouterAddress: ORACLE_ROUTER,
+  //   loanAsset:           "0x3bCFE4F6f3b11c8dB62f8302dc53f5CCdb51F9c3",
+  //   loanAssetDecimals:   8,
+  //   label:               "WBTC Market",
+  //   symbol:              "WBTC"
+  // },
 ]
 
 export const DEFAULT_VAULT = VAULT_REGISTRY[0]

@@ -66,8 +66,12 @@ function DashboardContent() {
     try {
       const base = apiBase()
       const [metricsRes, protocolRes] = await Promise.all([
-        fetch(base ? `${base}/metrics?vault=${vaultAddress}` : `/api/metrics?vault=${vaultAddress}`),
-        fetch(base ? `${base}/markets` : "/api/vaults"),
+        fetch(
+          base
+            ? `${base}/metrics?vault=${vaultAddress}`
+            : `/api/metrics?vault=${vaultAddress}`
+        ),
+        fetch(base ? `${base}/markets` : "/api/vaults")
       ])
       if (metricsRes.ok) {
         setMetrics(await metricsRes.json())
@@ -235,8 +239,14 @@ function DashboardContent() {
                   valueLabel='Available'
                   severity={metrics.liquidity.severity}
                   stats={[
-                    { label: "Depth", value: `${metrics.liquidity.depthRatio.toFixed(1)}x` },
-                    { label: "Borrows", value: `$${formatLargeNumber(metrics.liquidity.totalBorrows)}` },
+                    {
+                      label: "Depth",
+                      value: `${metrics.liquidity.depthRatio.toFixed(1)}x`
+                    },
+                    {
+                      label: "Borrows",
+                      value: `$${formatLargeNumber(metrics.liquidity.totalBorrows)}`
+                    }
                   ]}
                   href='/monitoring/liquidity'
                   sparklineColor='emerald'
@@ -250,8 +260,15 @@ function DashboardContent() {
                   valueLabel='Utilization'
                   severity={metrics.aprConvexity.severity}
                   stats={[
-                    { label: "APR", value: `${(metrics.aprConvexity.borrowRate * 100).toFixed(1)}%`, highlight: true },
-                    { label: "To Kink", value: `${(metrics.aprConvexity.distanceToKink * 100).toFixed(1)}%` },
+                    {
+                      label: "APR",
+                      value: `${(metrics.aprConvexity.borrowRate * 100).toFixed(1)}%`,
+                      highlight: true
+                    },
+                    {
+                      label: "To Kink",
+                      value: `${(metrics.aprConvexity.distanceToKink * 100).toFixed(1)}%`
+                    }
                   ]}
                   href='/monitoring/rates'
                   sparklineColor='amber'
@@ -265,8 +282,15 @@ function DashboardContent() {
                   valueLabel='USDC Price'
                   severity={metrics.oracle.severity}
                   stats={[
-                    { label: "Conf", value: `${metrics.oracle.confidence}%`, highlight: metrics.oracle.confidence === 100 },
-                    { label: "Status", value: metrics.oracle.isStale ? "Stale" : "Fresh" },
+                    {
+                      label: "Conf",
+                      value: `${metrics.oracle.confidence}%`,
+                      highlight: metrics.oracle.confidence === 100
+                    },
+                    {
+                      label: "Status",
+                      value: metrics.oracle.isStale ? "Stale" : "Fresh"
+                    }
                   ]}
                   href='/monitoring/oracle'
                   sparklineColor='cyan'
@@ -286,12 +310,17 @@ function DashboardContent() {
                   stats={[
                     {
                       label: "Trend",
-                      value: metrics.velocity.delta !== null
-                        ? metrics.velocity.delta > 0.01 ? "Spiking" : metrics.velocity.delta < -0.01 ? "Falling" : "Stable"
-                        : "N/A",
-                      highlight: true,
+                      value:
+                        metrics.velocity.delta !== null
+                          ? metrics.velocity.delta > 0.01
+                            ? "Spiking"
+                            : metrics.velocity.delta < -0.01
+                              ? "Falling"
+                              : "Stable"
+                          : "N/A",
+                      highlight: true
                     },
-                    { label: "Prev", value: "~" },
+                    { label: "Prev", value: "~" }
                   ]}
                   href='/monitoring/utilization'
                   sparklineColor='red'
@@ -329,7 +358,9 @@ function DashboardContent() {
                     <tbody className='divide-y divide-midnight-700/50'>
                       {protocol
                         ? protocol.vaults.map((vault) => {
-                            const isSelected = vault.vaultAddress.toLowerCase() === vaultAddress.toLowerCase()
+                            const isSelected =
+                              vault.vaultAddress.toLowerCase() ===
+                              vaultAddress.toLowerCase()
                             return (
                               <tr
                                 key={vault.vaultAddress}
@@ -339,17 +370,30 @@ function DashboardContent() {
                                 <td className='px-8 py-5'>
                                   <div className='flex items-center gap-4'>
                                     <div className='w-10 h-10 rounded-xl bg-blue-900/40 flex items-center justify-center shadow-lg border border-blue-500/20'>
-                                      <TokenIcon symbol={vault.symbol} size={22} />
+                                      <TokenIcon
+                                        symbol={vault.symbol}
+                                        size='sm'
+                                      />
                                     </div>
-                                    <span className='font-medium text-white text-base'>{vault.symbol}</span>
+                                    <span className='font-medium text-white text-base'>
+                                      {vault.symbol}
+                                    </span>
                                   </div>
                                 </td>
-                                <td className='px-8 py-5 text-slate-300 font-mono tracking-tight'>${formatPrice(vault.oraclePrice)}</td>
-                                <td className='px-8 py-5 text-slate-300 font-mono tracking-tight'>{formatLargeNumber(vault.totalSupply)}</td>
-                                <td className='px-8 py-5 text-slate-300 font-mono tracking-tight'>{formatLargeNumber(vault.totalBorrows)}</td>
+                                <td className='px-8 py-5 text-slate-300 font-mono tracking-tight'>
+                                  ${formatPrice(vault.oraclePrice)}
+                                </td>
+                                <td className='px-8 py-5 text-slate-300 font-mono tracking-tight'>
+                                  {formatLargeNumber(vault.totalSupply)}
+                                </td>
+                                <td className='px-8 py-5 text-slate-300 font-mono tracking-tight'>
+                                  {formatLargeNumber(vault.totalBorrows)}
+                                </td>
                                 <td className='px-8 py-5'>
                                   <div className='flex items-center gap-3'>
-                                    <span className={`font-medium ${vault.utilization > 0.8 ? "text-amber-400" : "text-white"}`}>
+                                    <span
+                                      className={`font-medium ${vault.utilization > 0.8 ? "text-amber-400" : "text-white"}`}
+                                    >
                                       {(vault.utilization * 100).toFixed(1)}%
                                     </span>
                                     <div className='w-20 h-1.5 rounded-full bg-midnight-950 overflow-hidden border border-white/10'>
@@ -357,14 +401,16 @@ function DashboardContent() {
                                         className={`h-full ${vault.utilization > 0.8 ? "bg-amber-500" : "bg-emerald-500"}`}
                                         style={{
                                           width: `${vault.utilization * 100}%`,
-                                          boxShadow: `0 0 8px ${vault.utilization > 0.8 ? "#f59e0b" : "#10b981"}`,
+                                          boxShadow: `0 0 8px ${vault.utilization > 0.8 ? "#f59e0b" : "#10b981"}`
                                         }}
                                       />
                                     </div>
                                   </div>
                                 </td>
                                 <td className='px-8 py-5'>
-                                  <StatusBadge severity={vault.overallSeverity} />
+                                  <StatusBadge
+                                    severity={vault.overallSeverity}
+                                  />
                                 </td>
                               </tr>
                             )
@@ -374,29 +420,46 @@ function DashboardContent() {
                               <td className='px-8 py-5'>
                                 <div className='flex items-center gap-4'>
                                   <div className='w-10 h-10 rounded-xl bg-blue-900/40 flex items-center justify-center shadow-lg border border-blue-500/20'>
-                                    <TokenIcon symbol={config.symbol} size={22} />
+                                    <TokenIcon
+                                      symbol={config.symbol}
+                                      size='sm'
+                                    />
                                   </div>
-                                  <span className='font-medium text-white text-base'>{config.symbol}</span>
+                                  <span className='font-medium text-white text-base'>
+                                    {config.symbol}
+                                  </span>
                                 </div>
                               </td>
-                              <td className='px-8 py-5 text-slate-300 font-mono tracking-tight'>${formatPrice(metrics.oracle.price)}</td>
                               <td className='px-8 py-5 text-slate-300 font-mono tracking-tight'>
-                                {formatLargeNumber(metrics.liquidity.available + metrics.liquidity.totalBorrows)}
+                                ${formatPrice(metrics.oracle.price)}
                               </td>
                               <td className='px-8 py-5 text-slate-300 font-mono tracking-tight'>
-                                {formatLargeNumber(metrics.liquidity.totalBorrows)}
+                                {formatLargeNumber(
+                                  metrics.liquidity.available +
+                                    metrics.liquidity.totalBorrows
+                                )}
+                              </td>
+                              <td className='px-8 py-5 text-slate-300 font-mono tracking-tight'>
+                                {formatLargeNumber(
+                                  metrics.liquidity.totalBorrows
+                                )}
                               </td>
                               <td className='px-8 py-5'>
                                 <div className='flex items-center gap-3'>
-                                  <span className={`font-medium ${metrics.aprConvexity.utilization > 0.8 ? "text-amber-400" : "text-white"}`}>
-                                    {(metrics.aprConvexity.utilization * 100).toFixed(1)}%
+                                  <span
+                                    className={`font-medium ${metrics.aprConvexity.utilization > 0.8 ? "text-amber-400" : "text-white"}`}
+                                  >
+                                    {(
+                                      metrics.aprConvexity.utilization * 100
+                                    ).toFixed(1)}
+                                    %
                                   </span>
                                   <div className='w-20 h-1.5 rounded-full bg-midnight-950 overflow-hidden border border-white/10'>
                                     <div
                                       className={`h-full ${metrics.aprConvexity.utilization > 0.8 ? "bg-amber-500" : "bg-emerald-500"}`}
                                       style={{
                                         width: `${metrics.aprConvexity.utilization * 100}%`,
-                                        boxShadow: `0 0 8px ${metrics.aprConvexity.utilization > 0.8 ? "#f59e0b" : "#10b981"}`,
+                                        boxShadow: `0 0 8px ${metrics.aprConvexity.utilization > 0.8 ? "#f59e0b" : "#10b981"}`
                                       }}
                                     />
                                   </div>
@@ -413,7 +476,6 @@ function DashboardContent() {
               </div>
             )}
           </div>
-
         </div>
 
         {/* Right Panel: Risk Updates */}

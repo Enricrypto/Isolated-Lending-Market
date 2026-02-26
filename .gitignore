@@ -25,3 +25,5 @@ frontend/prisma/generated/
 
 # Lockfile duplicates
 frontend/pnpm-lock.yaml
+.vercel
+.env*.local

@@ -5,13 +5,18 @@
  * (db push, migrate, studio). Runtime queries use the PrismaPg
  * adapter in src/lib/db.ts — this file is CLI-only.
  *
- * env var used: DATABASE_URL (session-mode pooler, port 5432)
+ * For migrations, pass the direct/session-pooler URL:
+ *   DATABASE_URL=$DIRECT_URL npx prisma db push
+ *
+ * For Railway:
+ *   railway run --env DATABASE_URL=$DIRECT_URL npx prisma db push
  */
-import { defineConfig } from "prisma/config"
+import path from "node:path"
+import { defineConfig, env } from "prisma/config"
 
 export default defineConfig({
-  schema: "./prisma/schema.prisma",
+  schema: path.join(__dirname, "prisma", "schema.prisma"),
   datasource: {
-    url: process.env.DATABASE_URL,
+    url: env("DATABASE_URL"),
   },
 })

@@ -5,6 +5,7 @@ import { ArrowRight, TrendingUp, Shield } from "lucide-react"
 import { TokenIcon } from "@/components/TokenIcon"
 import { Tooltip } from "@/components/Tooltip"
 import { useVaults } from "@/hooks/useVaults"
+import { useAppStore } from "@/store/useAppStore"
 import { computeSupplyAPY, computeBorrowAPR, formatRate } from "@/lib/irm"
 import { MarketUtilizationGraph } from "@/components/MarketUtilizationGraph"
 import type { VaultSummary, SeverityLevel } from "@/types/metrics"
@@ -51,6 +52,7 @@ function formatTVL(totalSupply: number, symbol: string, oraclePrice: number) {
 
 export function VaultTable() {
   const { data, loading, error } = useVaults()
+  const { selectedVault, setSelectedVault } = useAppStore()
 
   if (loading) {
     return (
@@ -150,10 +152,18 @@ export function VaultTable() {
                 : "--"
               const isAboveKink = hasData && vault.utilization > 0.8
 
+              const vaultId = vault.symbol.toLowerCase() as "usdc" | "weth" | "wbtc"
+              const isSelected = selectedVault === vaultId
+
               return (
                 <tr
                   key={vault.vaultAddress}
-                  className='hover:bg-white/5 transition-all'
+                  onClick={() => setSelectedVault(isSelected ? null : vaultId)}
+                  className={`cursor-pointer transition-all ${
+                    isSelected
+                      ? "bg-indigo-500/10 border-l-2 border-l-indigo-500"
+                      : "hover:bg-white/5 border-l-2 border-l-transparent"
+                  }`}
                 >
                   <td className='px-8 py-5'>
                     <div className='flex items-center gap-4'>

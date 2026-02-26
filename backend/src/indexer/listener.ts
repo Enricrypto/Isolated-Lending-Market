@@ -1,16 +1,17 @@
 /**
- * Event Listener
- * --------------
- * Subscribes to MarketV1 contract events using viem's watchContractEvent.
- * Works over HTTP (polling-based) — no websocket URL required.
+ * Event Log Processor
+ * -------------------
+ * Processes a single decoded MarketV1 event log.
+ * Called by block-processor.ts after deterministic getLogs fetching.
+ *
+ * This replaces the previous watchContractEvent callback approach.
+ * No polling, no raw WebSocket callbacks — purely driven by block-processor.
  */
 
-import { client } from "../lib/rpc"
-import { MARKET_EVENTS_ABI } from "./events"
 import { computeAndSaveMarketSnapshot } from "./snapshot"
 import { updateUserPosition } from "./position"
 import { storeLiquidation } from "./liquidation"
-import type { WatchContractEventReturnType, Log } from "viem"
+import { logger } from "../lib/logger"
 
 export interface MarketConfig {
   marketId: string
@@ -22,98 +23,79 @@ export interface MarketConfig {
   loanAssetDecimals: number
 }
 
-type EventHandler = (logs: Log[]) => void
-
-export function watchMarketEvents(
-  market: MarketConfig,
-  pollingInterval = 15_000
-): WatchContractEventReturnType {
-  const marketAddresses = { ...market }
-
-  async function handleUserEvent(user: `0x${string}`, eventName: string) {
-    console.log(`[indexer] ${eventName} from ${user.slice(0, 8)}...`)
-    try {
-      await updateUserPosition(user, market.marketId, market.marketAddress)
-      await computeAndSaveMarketSnapshot(marketAddresses)
-    } catch (err) {
-      console.error(`[indexer] Error handling ${eventName}:`, err)
-    }
-  }
-
-  const unwatch = client.watchContractEvent({
-    address: market.marketAddress,
-    abi: MARKET_EVENTS_ABI,
-    pollingInterval,
-    onLogs: ((logs: Log[]) => {
-      for (const log of logs) {
-        const args = (log as unknown as { args: Record<string, unknown> }).args
-        const eventName = (log as unknown as { eventName: string }).eventName
-
-        switch (eventName) {
-          case "CollateralDeposited":
-          case "CollateralWithdrawn":
-            handleUserEvent(args.user as `0x${string}`, eventName)
-            break
-
-          case "Borrowed":
-          case "Repaid":
-            handleUserEvent(args.user as `0x${string}`, eventName)
-            break
-
-          case "Liquidated":
-            handleLiquidation(
-              marketAddresses,
-              args as {
-                borrower: `0x${string}`
-                liquidator: `0x${string}`
-                debtCovered: bigint
-                collateralSeized: bigint
-                badDebt: bigint
-              },
-              log as unknown as { transactionHash: `0x${string}`; blockNumber: bigint; logIndex: number }
-            )
-            break
-
-          case "GlobalBorrowIndexUpdated":
-            computeAndSaveMarketSnapshot(marketAddresses).catch((err) =>
-              console.error("[indexer] Error on index update snapshot:", err)
-            )
-            break
-        }
-      }
-    }) as EventHandler,
-  })
-
-  return unwatch
+export interface DecodedLog {
+  eventName: string
+  args: Record<string, unknown>
+  transactionHash: `0x${string}`
+  blockNumber: bigint
+  logIndex: number
 }
 
-async function handleLiquidation(
-  market: MarketConfig,
-  args: {
-    borrower: `0x${string}`
-    liquidator: `0x${string}`
-    debtCovered: bigint
-    collateralSeized: bigint
-    badDebt: bigint
-  },
-  log: { transactionHash: `0x${string}`; blockNumber: bigint; logIndex: number }
-) {
-  console.log(`[indexer] Liquidated borrower=${args.borrower.slice(0, 8)}...`)
-  try {
-    await storeLiquidation(market.marketId, {
-      borrower: args.borrower,
-      liquidator: args.liquidator,
-      debtCovered: args.debtCovered,
-      collateralSeized: args.collateralSeized,
-      badDebt: args.badDebt,
-      txHash: log.transactionHash,
-      blockNumber: log.blockNumber,
-      logIndex: log.logIndex,
-      loanAssetDecimals: market.loanAssetDecimals,
-    })
-    await updateUserPosition(args.borrower, market.marketId, market.marketAddress)
-    await computeAndSaveMarketSnapshot(market)
-  } catch (err) {
-    console.error("[indexer] Error handling Liquidated:", err)
+/**
+ * Process a single decoded event log for a given market.
+ * All operations are idempotent — safe to call multiple times for the same log.
+ */
+export async function processEventLog(log: DecodedLog, market: MarketConfig): Promise<void> {
+  const { eventName, args } = log
+
+  switch (eventName) {
+    case "CollateralDeposited":
+    case "CollateralWithdrawn": {
+      const user = args.user as `0x${string}`
+      logger.info(
+        { event: eventName, user: user.slice(0, 10), block: Number(log.blockNumber) },
+        "[listener] User collateral event"
+      )
+      await updateUserPosition(user, market.marketId, market.marketAddress)
+      await computeAndSaveMarketSnapshot(market)
+      break
+    }
+
+    case "Borrowed":
+    case "Repaid": {
+      const user = args.user as `0x${string}`
+      logger.info(
+        { event: eventName, user: user.slice(0, 10), block: Number(log.blockNumber) },
+        "[listener] User borrow/repay event"
+      )
+      await updateUserPosition(user, market.marketId, market.marketAddress)
+      await computeAndSaveMarketSnapshot(market)
+      break
+    }
+
+    case "Liquidated": {
+      const borrower   = args.borrower   as `0x${string}`
+      const liquidator = args.liquidator as `0x${string}`
+      logger.info(
+        { borrower: borrower.slice(0, 10), liquidator: liquidator.slice(0, 10), block: Number(log.blockNumber) },
+        "[listener] Liquidated event"
+      )
+      await storeLiquidation(market.marketId, {
+        borrower,
+        liquidator,
+        debtCovered:       args.debtCovered      as bigint,
+        collateralSeized:  args.collateralSeized  as bigint,
+        badDebt:           args.badDebt           as bigint,
+        txHash:            log.transactionHash,
+        blockNumber:       log.blockNumber,
+        logIndex:          log.logIndex,
+        loanAssetDecimals: market.loanAssetDecimals,
+      })
+      await updateUserPosition(borrower, market.marketId, market.marketAddress)
+      await computeAndSaveMarketSnapshot(market)
+      break
+    }
+
+    case "GlobalBorrowIndexUpdated": {
+      logger.info(
+        { block: Number(log.blockNumber) },
+        "[listener] GlobalBorrowIndexUpdated — snapshotting market"
+      )
+      await computeAndSaveMarketSnapshot(market)
+      break
+    }
+
+    default:
+      break
   }
 }

@@ -1,0 +1,19 @@
+{
+  "vaults": [
+    {
+      "vaultAddress": "0xE8323c3d293f81C71232023367Bada21137C055E",
+      "label": "USDC Isolated Market",
+      "symbol": "USDC",
+      "overallSeverity": 0,
+      "utilization": 0.65,
+      "totalSupply": 8400000,
+      "totalBorrows": 5460000,
+      "oraclePrice": 1.0,
+      "lastUpdated": "2026-02-25T12:00:00.000Z"
+    }
+  ],
+  "protocolSeverity": 0,
+  "totalTVL": 8400000,
+  "totalBorrows": 5460000,
+  "timestamp": "2026-02-25T12:00:00.000Z"
+}

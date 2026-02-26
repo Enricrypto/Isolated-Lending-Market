@@ -15,18 +15,19 @@ import { activeMarkets } from "../indexer/index"
 import { computeAndSaveMarketSnapshot } from "../indexer/snapshot"
 import { updateUserPosition } from "../indexer/position"
 import { prisma } from "../lib/db"
+import { logger } from "../lib/logger"
 
 export function startCronJobs() {
   // --- Snapshot job: every minute ---
   cron.schedule("* * * * *", async () => {
     if (activeMarkets.length === 0) return
 
-    console.log(`[cron] Snapshot tick — ${activeMarkets.length} market(s)`)
+    logger.info({ markets: activeMarkets.length }, "[cron] Snapshot tick")
     for (const market of activeMarkets) {
       try {
         await computeAndSaveMarketSnapshot(market)
       } catch (err) {
-        console.error(`[cron] Snapshot failed for ${market.marketAddress.slice(0, 8)}:`, err)
+        logger.error({ market: market.marketAddress.slice(0, 8), err }, "[cron] Snapshot failed")
       }
     }
   })
@@ -48,7 +49,7 @@ export function startCronJobs() {
 
       if (recentPositions.length === 0) return
 
-      console.log(`[cron] Health factor recheck — ${recentPositions.length} position(s)`)
+      logger.info({ positions: recentPositions.length }, "[cron] Health factor recheck")
 
       for (const pos of recentPositions) {
         const market = activeMarkets.find((m) => m.marketId === pos.marketId)
@@ -61,11 +62,11 @@ export function startCronJobs() {
             market.marketAddress
           )
         } catch (err) {
-          console.error(`[cron] Health factor recheck failed for ${pos.userAddress.slice(0, 8)}:`, err)
+          logger.error({ user: pos.userAddress.slice(0, 8), err }, "[cron] Health factor recheck failed")
         }
       }
     } catch (err) {
-      console.error("[cron] Health factor job error:", err)
+      logger.error({ err }, "[cron] Health factor job error")
     }
   })
 
@@ -73,7 +74,7 @@ export function startCronJobs() {
   // Aggregates the previous 24h: peak utilization, total volume, unique active users.
   // Writes a MetricSnapshot tagged with signal="daily_aggregate" for charting.
   cron.schedule("0 0 * * *", async () => {
-    console.log("[cron] Daily analytics aggregate starting...")
+    logger.info("[cron] Daily analytics aggregate starting...")
 
     try {
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
@@ -102,18 +103,21 @@ export function startCronJobs() {
         const peakTVL = Math.max(...snapshots.map((s) => Number(s.totalSupply)))
         const uniqueUsers = positions.length
 
-        console.log(
-          `[cron] Daily aggregate — market ${market.marketAddress.slice(0, 8)}: ` +
-          `peakUtil=${(peakUtilization * 100).toFixed(1)}% avgUtil=${(avgUtilization * 100).toFixed(1)}% ` +
-          `peakTVL=${peakTVL.toFixed(0)} uniqueUsers=${uniqueUsers} liquidations=${liquidations}`
-        )
+        logger.info({
+          market:         market.marketAddress.slice(0, 8),
+          peakUtilPct:    (peakUtilization * 100).toFixed(1),
+          avgUtilPct:     (avgUtilization * 100).toFixed(1),
+          peakTVL:        peakTVL.toFixed(0),
+          uniqueUsers,
+          liquidations,
+        }, "[cron] Daily aggregate")
       }
 
-      console.log("[cron] Daily analytics aggregate complete")
+      logger.info("[cron] Daily analytics aggregate complete")
     } catch (err) {
-      console.error("[cron] Daily analytics job error:", err)
+      logger.error({ err }, "[cron] Daily analytics job error")
     }
   })
 
-  console.log("[cron] Jobs started: snapshot (every 1m), health factor (every 10m), analytics (daily midnight UTC)")
+  logger.info("[cron] Jobs started: snapshot (1m), health factor (10m), analytics (daily midnight UTC)")
 }

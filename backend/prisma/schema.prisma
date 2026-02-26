@@ -147,6 +147,28 @@ model UserPositionSnapshot {
   @@index([marketId, timestamp])
 }
 
+// =============================================================================
+// INDEXER STATE — Block cursor + reorg detection
+// =============================================================================
+
+/// Indexer sync cursor — one row per chain.
+/// Tracks the last confirmed block that was fully processed.
+model SyncState {
+  id                 Int      @id @default(1)
+  chainId            Int      @unique
+  lastProcessedBlock Int
+  lastProcessedHash  String   @db.VarChar(66)
+  updatedAt          DateTime @updatedAt
+}
+
+/// Rolling window of recent block hashes for reorg detection.
+/// Pruned to keep only the last REORG_BUFFER (20) blocks.
+model IndexedBlock {
+  blockNumber Int      @id
+  blockHash   String   @db.VarChar(66)
+  processedAt DateTime @default(now())
+}
+
 /// On-chain liquidation event record.
 model LiquidationEvent {
   id        Int      @id @default(autoincrement())

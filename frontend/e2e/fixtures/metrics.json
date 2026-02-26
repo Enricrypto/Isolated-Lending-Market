@@ -1,0 +1,28 @@
+{
+  "vaultAddress": "0xE8323c3d293f81C71232023367Bada21137C055E",
+  "timestamp": "2026-02-25T12:00:00.000Z",
+  "liquidity": {
+    "available": 2940000,
+    "totalBorrows": 5460000,
+    "depthRatio": 0.35,
+    "severity": 0
+  },
+  "aprConvexity": {
+    "utilization": 0.65,
+    "borrowRate": 0.08,
+    "distanceToKink": 0.15,
+    "severity": 0
+  },
+  "oracle": {
+    "price": 1.0,
+    "confidence": 99,
+    "riskScore": 2,
+    "isStale": false,
+    "severity": 0
+  },
+  "velocity": {
+    "delta": 0.01,
+    "severity": 0
+  },
+  "overall": 0
+}

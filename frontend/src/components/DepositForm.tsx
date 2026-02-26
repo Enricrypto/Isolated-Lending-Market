@@ -408,10 +408,10 @@ export function DepositForm() {
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder='0.00'
-            className='flex-1 bg-transparent text-2xl font-mono font-medium text-white placeholder-slate-700 outline-none'
+            className='flex-1 min-w-0 bg-transparent text-2xl font-mono font-medium text-white placeholder-slate-700 outline-none'
           />
           <div
-            className='flex items-center gap-2 px-3 py-1.5 rounded-xl border border-midnight-700/50'
+            className='shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-xl border border-midnight-700/50'
             style={{ backgroundColor: `${token.color}10` }}
           >
             <TokenIcon symbol={token.symbol} size='sm' />

@@ -194,7 +194,7 @@ export default function VaultDashboard() {
 
         {/* Right Sidebar — shown when a market is selected */}
         {selectedVault && selectedToken && (
-          <aside className='w-full xl:w-[380px] border-l border-midnight-700/50 bg-midnight-950/40 backdrop-blur-md flex flex-col shrink-0'>
+          <aside className='w-full xl:w-[380px] xl:sticky xl:top-16 xl:h-[calc(100vh-4rem)] border-l border-midnight-700/50 bg-midnight-950/40 backdrop-blur-md flex flex-col shrink-0'>
             {/* Market Header */}
             <div className='p-6 border-b border-midnight-700/50'>
               <div className='flex items-center justify-between mb-4'>

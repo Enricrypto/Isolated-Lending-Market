@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "LendCore | Decentralized Isolated Lending",
@@ -29,6 +30,19 @@ export default function RootLayout({
 
         <Providers>
           {children}
+          <Toaster
+            position="bottom-right"
+            theme="dark"
+            toastOptions={{
+              style: {
+                background: "#0d1117",
+                border: "1px solid rgba(99,102,241,0.2)",
+                color: "#e2e8f0",
+                fontFamily: "var(--font-inter, sans-serif)",
+                fontSize: "13px",
+              },
+            }}
+          />
         </Providers>
       </body>
     </html>

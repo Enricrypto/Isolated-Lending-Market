@@ -9,6 +9,7 @@ import {
 import { parseUnits, formatUnits, maxUint256 } from "viem"
 import { createPublicClient, http } from "viem"
 import { sepolia } from "viem/chains"
+import { toast } from "sonner"
 import { SEPOLIA_ADDRESSES, TOKENS } from "@/lib/addresses"
 import { ERC20_ABI, VAULT_ABI } from "@/lib/contracts"
 import { VAULT_REGISTRY } from "@/lib/vault-registry"
@@ -33,6 +34,31 @@ const VAULT_CONFIG_BY_ID = Object.fromEntries(
 )
 
 type TabMode = "deposit" | "withdraw"
+
+function Spinner() {
+  return (
+    <svg
+      className="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  )
+}
 
 export function DepositForm() {
   const { address, isConnected } = useAccount()
@@ -76,17 +102,20 @@ export function DepositForm() {
   const {
     writeContract: approve,
     data: approveTxHash,
-    isPending: isApproving
+    isPending: isApproving,
+    reset: resetApprove,
   } = useWriteContract()
   const {
     writeContract: deposit,
     data: depositTxHash,
-    isPending: isDepositing
+    isPending: isDepositing,
+    reset: resetDeposit,
   } = useWriteContract()
   const {
     writeContract: withdraw,
     data: withdrawTxHash,
-    isPending: isWithdrawing
+    isPending: isWithdrawing,
+    reset: resetWithdraw,
   } = useWriteContract()
 
   // Transaction receipts
@@ -155,6 +184,41 @@ export function DepositForm() {
     withdrawSuccess
   ])
 
+  // Toast + reset on deposit success
+  useEffect(() => {
+    if (!depositSuccess || !depositTxHash) return
+    const hash = depositTxHash
+    toast.success("Deposit confirmed!", {
+      description: `${hash.slice(0, 10)}...${hash.slice(-8)}`,
+      action: {
+        label: "View on Etherscan",
+        onClick: () =>
+          window.open(`https://sepolia.etherscan.io/tx/${hash}`, "_blank"),
+      },
+      duration: 6000,
+    })
+    resetApprove()
+    resetDeposit()
+    setAmount("")
+  }, [depositSuccess, depositTxHash, resetApprove, resetDeposit])
+
+  // Toast + reset on withdraw success
+  useEffect(() => {
+    if (!withdrawSuccess || !withdrawTxHash) return
+    const hash = withdrawTxHash
+    toast.success("Withdrawal confirmed!", {
+      description: `${hash.slice(0, 10)}...${hash.slice(-8)}`,
+      action: {
+        label: "View on Etherscan",
+        onClick: () =>
+          window.open(`https://sepolia.etherscan.io/tx/${hash}`, "_blank"),
+      },
+      duration: 6000,
+    })
+    resetWithdraw()
+    setAmount("")
+  }, [withdrawSuccess, withdrawTxHash, resetWithdraw])
+
   // Update transaction steps
   useEffect(() => {
     const newSteps: TransactionStep[] = []
@@ -188,16 +252,10 @@ export function DepositForm() {
       if (parsedAmount > 0n) {
         newSteps.push({
           label: "Deposit to Vault",
-          description: depositSuccess
-            ? "Deposit confirmed"
-            : isDepositing
-              ? "Minting vault shares..."
-              : "ERC4626 Mint Shares",
-          status: depositSuccess
-            ? "completed"
-            : isDepositing
-              ? "active"
-              : "pending",
+          description: isDepositing
+            ? "Minting vault shares..."
+            : "ERC4626 Mint Shares",
+          status: isDepositing ? "active" : "pending",
           txHash: depositTxHash
         })
       }
@@ -213,7 +271,6 @@ export function DepositForm() {
     approveSuccess,
     approveTxHash,
     isDepositing,
-    depositSuccess,
     depositTxHash
   ])
 
@@ -284,6 +341,16 @@ export function DepositForm() {
       </div>
     )
   }
+
+  const isProcessing = isApproving || isDepositing || isWithdrawing
+
+  let buttonText: string
+  if (isApproving) buttonText = "Approving..."
+  else if (isDepositing) buttonText = "Depositing..."
+  else if (isWithdrawing) buttonText = "Withdrawing..."
+  else if (approveSuccess && mode === "deposit") buttonText = "Confirm Deposit →"
+  else if (mode === "deposit") buttonText = "Deposit Funds"
+  else buttonText = "Withdraw Funds"
 
   return (
     <div className='space-y-5'>
@@ -396,30 +463,11 @@ export function DepositForm() {
       {/* Action Button */}
       <button
         onClick={mode === "deposit" ? handleDeposit : handleWithdraw}
-        disabled={
-          !amount ||
-          parseFloat(amount) <= 0 ||
-          isApproving ||
-          isDepositing ||
-          isWithdrawing
-        }
+        disabled={!amount || parseFloat(amount) <= 0 || isProcessing}
         className='w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(79,70,229,0.2)] hover:shadow-[0_0_30px_rgba(79,70,229,0.4)]'
       >
-        {isApproving
-          ? "Approving..."
-          : isDepositing
-            ? "Depositing..."
-            : isWithdrawing
-              ? "Withdrawing..."
-              : depositSuccess
-                ? "Deposit Complete ✓"
-                : withdrawSuccess
-                  ? "Withdrawal Complete ✓"
-                  : approveSuccess && mode === "deposit"
-                    ? "Confirm Deposit →"
-                    : mode === "deposit"
-                      ? "Confirm Deposit"
-                      : "Confirm Withdrawal"}
+        {isProcessing && <Spinner />}
+        {buttonText}
       </button>
 
       {/* Gas Estimate */}

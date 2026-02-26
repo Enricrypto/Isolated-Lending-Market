@@ -51,11 +51,16 @@ export async function computeAndSaveMarketSnapshot(market: MarketAddresses) {
   const globalBorrowIndex = results[7].status === "success" ? normalize(results[7].result as bigint, WAD) : null
 
   let oraclePrice = 0
-  let oracleConfidence = 0
-  let oracleIsStale = true
-  let oracleRiskScore = 100
+  // When oracle call fails, use neutral defaults so a missing/unconfigured
+  // feed doesn't trigger Emergency severity (confidence=0 or riskScore=100
+  // would falsely alarm for markets like mock-USDC with no Chainlink feed).
+  let oracleConfidence = 100
+  let oracleIsStale = false
+  let oracleRiskScore = 0
+  let oracleCallSucceeded = false
 
   if (results[8].status === "success") {
+    oracleCallSucceeded = true
     const oracleEval = results[8].result as {
       resolvedPrice: bigint
       confidence: bigint
@@ -75,7 +80,11 @@ export async function computeAndSaveMarketSnapshot(market: MarketAddresses) {
 
   const liquiditySeverity = computeLiquiditySeverity(depthRatio)
   const aprConvexitySeverity = computeAPRConvexitySeverity(utilizationRate, optimalUtilization)
-  const oracleSeverity = computeOracleSeverity(oracleConfidence, oracleIsStale, oracleRiskScore)
+  // Only compute oracle severity from real data; if the call failed (no feed
+  // configured for this token), default to 0 so it doesn't show as Emergency.
+  const oracleSeverity = oracleCallSucceeded
+    ? computeOracleSeverity(oracleConfidence, oracleIsStale, oracleRiskScore)
+    : 0
   const overallSeverity = computeOverallSeverity(liquiditySeverity, aprConvexitySeverity, oracleSeverity, null)
 
   return prisma.marketSnapshot.create({

@@ -279,7 +279,7 @@ function DashboardContent() {
                   title='Oracle Feeds'
                   subtitle='Chainlink / LKG'
                   value={`$${formatPrice(metrics.oracle.price)}`}
-                  valueLabel='USDC Price'
+                  valueLabel={`${config.symbol} Price`}
                   severity={metrics.oracle.severity}
                   stats={[
                     {

@@ -10,18 +10,14 @@ import { parseUnits, formatUnits, maxUint256 } from "viem"
 import { createPublicClient, http } from "viem"
 import { sepolia } from "viem/chains"
 import { toast } from "sonner"
-import { SEPOLIA_ADDRESSES, TOKENS } from "@/lib/addresses"
-import { ERC20_ABI, VAULT_ABI } from "@/lib/contracts"
-import { VAULT_REGISTRY } from "@/lib/vault-registry"
+import { TOKENS } from "@/lib/addresses"
+import { ERC20_ABI, MARKET_ABI } from "@/lib/contracts"
 import { useAppStore } from "@/store/useAppStore"
-import { useVaults } from "@/hooks/useVaults"
-import { computeSupplyAPY, formatRate } from "@/lib/irm"
-import { Tooltip } from "@/components/Tooltip"
 import { TransactionStepper, type TransactionStep } from "./TransactionStepper"
-import { Wallet, ArrowDownToLine, ArrowUpFromLine } from "lucide-react"
 import { TokenIcon } from "@/components/TokenIcon"
+import { ArrowDownToLine, ArrowUpFromLine, Wallet } from "lucide-react"
 
-const client = createPublicClient({
+const publicClient = createPublicClient({
   chain: sepolia,
   transport: http(
     process.env.NEXT_PUBLIC_RPC_URL ||
@@ -29,9 +25,12 @@ const client = createPublicClient({
   )
 })
 
-const VAULT_CONFIG_BY_ID = Object.fromEntries(
-  VAULT_REGISTRY.map((v) => [v.symbol.toLowerCase(), v])
-)
+// Which collateral tokens are accepted per market (loan asset is excluded)
+const COLLATERAL_TOKENS: Record<string, (keyof typeof TOKENS)[]> = {
+  usdc: ["WETH", "WBTC"],
+  weth: ["WBTC"],
+  wbtc: ["WETH"]
+}
 
 type TabMode = "deposit" | "withdraw"
 
@@ -60,71 +59,76 @@ function Spinner() {
   )
 }
 
-export function DepositForm() {
+interface CollateralFormProps {
+  marketAddress: string
+  selectedVaultId: string
+  onSuccess?: () => void
+}
+
+export function CollateralForm({
+  marketAddress,
+  selectedVaultId,
+  onSuccess
+}: CollateralFormProps) {
   const { address, isConnected } = useAccount()
-  const { selectedVault, triggerRefresh } = useAppStore()
-  const { data: vaultsData } = useVaults()
+  const { triggerRefresh } = useAppStore()
   const [mode, setMode] = useState<TabMode>("deposit")
   const [amount, setAmount] = useState("")
-  const [balance, setBalance] = useState<bigint>(0n)
-  const [vaultBalance, setVaultBalance] = useState<bigint>(0n)
-  const [allowance, setAllowance] = useState<bigint>(0n)
   const [steps, setSteps] = useState<TransactionStep[]>([])
 
-  // Token & vault info
-  const token = selectedVault
-    ? TOKENS[selectedVault.toUpperCase() as keyof typeof TOKENS]
-    : TOKENS.USDC
+  // Available collateral tokens for this market
+  const collateralKeys = COLLATERAL_TOKENS[selectedVaultId] ?? ["WETH", "WBTC"]
+  const [selectedTokenKey, setSelectedTokenKey] = useState<keyof typeof TOKENS>(
+    collateralKeys[0]
+  )
 
-  const vaultAddress =
-    (selectedVault
-      ? VAULT_CONFIG_BY_ID[selectedVault]?.vaultAddress
-      : undefined) ?? SEPOLIA_ADDRESSES.vault
+  // Reset selected token when market changes
+  useEffect(() => {
+    const keys = COLLATERAL_TOKENS[selectedVaultId] ?? ["WETH", "WBTC"]
+    setSelectedTokenKey(keys[0])
+    setAmount("")
+    setSteps([])
+  }, [selectedVaultId])
 
-  // Parse amount once
+  const token = TOKENS[selectedTokenKey]
+
   const parsedAmount = useMemo(
     () => (amount ? parseUnits(amount, token.decimals) : 0n),
     [amount, token.decimals]
   )
 
-  // Compute APY & yield
-  const vaultSnapshot = vaultsData?.vaults.find(
-    (v) => v.vaultAddress.toLowerCase() === vaultAddress.toLowerCase()
-  )
-  const utilization = vaultSnapshot?.utilization ?? 0
-  const supplyAPY = computeSupplyAPY(utilization)
-  const weeklyYield =
-    parsedAmount > 0n && supplyAPY > 0
-      ? (Number(formatUnits(parsedAmount, token.decimals)) * supplyAPY) / 52
-      : 0
+  // Wallet balance + allowance for selected collateral token
+  const [walletBalance, setWalletBalance] = useState<bigint>(0n)
+  const [allowance, setAllowance] = useState<bigint>(0n)
 
-  // Write contracts
+  // Write hooks
   const {
     writeContract: approve,
     data: approveTxHash,
     isPending: isApproving,
     reset: resetApprove,
     error: approveError,
-    isError: isApproveError,
+    isError: isApproveError
   } = useWriteContract()
+
   const {
-    writeContract: deposit,
+    writeContract: depositCollateral,
     data: depositTxHash,
     isPending: isDepositing,
     reset: resetDeposit,
     error: depositError,
-    isError: isDepositError,
+    isError: isDepositError
   } = useWriteContract()
+
   const {
-    writeContract: withdraw,
+    writeContract: withdrawCollateral,
     data: withdrawTxHash,
     isPending: isWithdrawing,
     reset: resetWithdraw,
     error: withdrawError,
-    isError: isWithdrawError,
+    isError: isWithdrawError
   } = useWriteContract()
 
-  // Transaction receipts
   const { isSuccess: approveSuccess } = useWaitForTransactionReceipt({
     hash: approveTxHash
   })
@@ -135,66 +139,41 @@ export function DepositForm() {
     hash: withdrawTxHash
   })
 
-  // Reset form on vault change
-  useEffect(() => {
-    setAmount("")
-    setBalance(0n)
-    setVaultBalance(0n)
-    setAllowance(0n)
-    setSteps([])
-  }, [vaultAddress])
-
-  // Fetch balances & allowance
+  // Fetch balance + allowance
   useEffect(() => {
     if (!address || !isConnected) return
 
     const fetchBalances = async () => {
       try {
-        const [bal, vBal, allow] = await Promise.all([
-          client.readContract({
+        const [bal, allow] = await Promise.all([
+          publicClient.readContract({
             address: token.address as `0x${string}`,
             abi: ERC20_ABI,
             functionName: "balanceOf",
             args: [address as `0x${string}`]
           }),
-          client.readContract({
-            address: vaultAddress as `0x${string}`,
-            abi: VAULT_ABI,
-            functionName: "balanceOf",
-            args: [address as `0x${string}`]
-          }),
-          client.readContract({
+          publicClient.readContract({
             address: token.address as `0x${string}`,
             abi: ERC20_ABI,
             functionName: "allowance",
-            args: [address as `0x${string}`, vaultAddress as `0x${string}`]
+            args: [address as `0x${string}`, marketAddress as `0x${string}`]
           })
         ])
-
-        setBalance(bal as bigint)
-        setVaultBalance(vBal as bigint)
+        setWalletBalance(bal as bigint)
         setAllowance(allow as bigint)
       } catch (err) {
-        console.error("Failed to fetch balances:", err)
+        console.error("[CollateralForm] Failed to fetch balances:", err)
       }
     }
 
     fetchBalances()
-  }, [
-    address,
-    isConnected,
-    token.address,
-    vaultAddress,
-    approveSuccess,
-    depositSuccess,
-    withdrawSuccess
-  ])
+  }, [address, isConnected, token.address, marketAddress, approveSuccess, depositSuccess, withdrawSuccess])
 
   // Toast + reset on deposit success
   useEffect(() => {
     if (!depositSuccess || !depositTxHash) return
     const hash = depositTxHash
-    toast.success("Deposit confirmed!", {
+    toast.success("Collateral deposited!", {
       description: `${hash.slice(0, 10)}...${hash.slice(-8)}`,
       action: {
         label: "View on Etherscan",
@@ -207,13 +186,14 @@ export function DepositForm() {
     resetDeposit()
     setAmount("")
     triggerRefresh()
-  }, [depositSuccess, depositTxHash, resetApprove, resetDeposit, triggerRefresh])
+    onSuccess?.()
+  }, [depositSuccess, depositTxHash, resetApprove, resetDeposit, triggerRefresh, onSuccess])
 
   // Toast + reset on withdraw success
   useEffect(() => {
     if (!withdrawSuccess || !withdrawTxHash) return
     const hash = withdrawTxHash
-    toast.success("Withdrawal confirmed!", {
+    toast.success("Collateral withdrawn!", {
       description: `${hash.slice(0, 10)}...${hash.slice(-8)}`,
       action: {
         label: "View on Etherscan",
@@ -225,9 +205,10 @@ export function DepositForm() {
     resetWithdraw()
     setAmount("")
     triggerRefresh()
-  }, [withdrawSuccess, withdrawTxHash, resetWithdraw, triggerRefresh])
+    onSuccess?.()
+  }, [withdrawSuccess, withdrawTxHash, resetWithdraw, triggerRefresh, onSuccess])
 
-  // Toast on any transaction error
+  // Toast on error
   useEffect(() => {
     const err = approveError ?? depositError ?? withdrawError
     if (!err) return
@@ -238,47 +219,41 @@ export function DepositForm() {
     })
   }, [isApproveError, isDepositError, isWithdrawError, approveError, depositError, withdrawError])
 
-  // Update transaction steps
+  // Build transaction steps for deposit mode
   useEffect(() => {
+    if (mode !== "deposit" || parsedAmount === 0n) {
+      setSteps([])
+      return
+    }
+
+    const needsApproval = allowance < parsedAmount
     const newSteps: TransactionStep[] = []
 
-    const needsApproval = parsedAmount > 0n && allowance < parsedAmount
-
-    if (mode === "deposit") {
-      if (needsApproval) {
-        newSteps.push({
-          label: `Approve ${token.symbol}`,
-          description: approveSuccess
-            ? "Infinite approval granted"
-            : isApproving
-              ? "Waiting for approval..."
-              : "Token approval required",
-          status: approveSuccess
-            ? "completed"
-            : isApproving
-              ? "active"
-              : "pending",
-          txHash: approveTxHash
-        })
-      } else if (parsedAmount > 0n) {
-        newSteps.push({
-          label: `Approve ${token.symbol}`,
-          description: "Infinite approval granted",
-          status: "completed"
-        })
-      }
-
-      if (parsedAmount > 0n) {
-        newSteps.push({
-          label: "Deposit to Vault",
-          description: isDepositing
-            ? "Minting vault shares..."
-            : "ERC4626 Mint Shares",
-          status: isDepositing ? "active" : "pending",
-          txHash: depositTxHash
-        })
-      }
+    if (needsApproval) {
+      newSteps.push({
+        label: `Approve ${token.symbol}`,
+        description: approveSuccess
+          ? "Infinite approval granted"
+          : isApproving
+            ? "Waiting for approval..."
+            : "Token approval required",
+        status: approveSuccess ? "completed" : isApproving ? "active" : "pending",
+        txHash: approveTxHash
+      })
+    } else {
+      newSteps.push({
+        label: `Approve ${token.symbol}`,
+        description: "Infinite approval granted",
+        status: "completed"
+      })
     }
+
+    newSteps.push({
+      label: "Deposit Collateral",
+      description: isDepositing ? "Depositing collateral..." : "Send collateral to market",
+      status: isDepositing ? "active" : "pending",
+      txHash: depositTxHash
+    })
 
     setSteps(newSteps)
   }, [
@@ -293,71 +268,49 @@ export function DepositForm() {
     depositTxHash
   ])
 
-  // Handlers
   const handleDeposit = useCallback(() => {
     if (!amount || !address || parsedAmount <= 0n) return
 
-    // approveSuccess means we just approved this session — go straight to deposit
-    // even if the allowance refetch hasn't completed yet
     if (allowance >= parsedAmount || approveSuccess) {
-      deposit({
-        address: vaultAddress as `0x${string}`,
-        abi: VAULT_ABI,
-        functionName: "deposit",
-        args: [parsedAmount, address as `0x${string}`]
+      depositCollateral({
+        address: marketAddress as `0x${string}`,
+        abi: MARKET_ABI,
+        functionName: "depositCollateral",
+        args: [token.address as `0x${string}`, parsedAmount]
       })
     } else {
       approve({
         address: token.address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: "approve",
-        args: [vaultAddress as `0x${string}`, maxUint256]
+        args: [marketAddress as `0x${string}`, maxUint256]
       })
     }
-  }, [
-    amount,
-    address,
-    parsedAmount,
-    allowance,
-    approveSuccess,
-    approve,
-    deposit,
-    token.address,
-    vaultAddress
-  ])
+  }, [amount, address, parsedAmount, allowance, approveSuccess, depositCollateral, approve, token.address, marketAddress])
 
   const handleWithdraw = useCallback(() => {
     if (!amount || !address || parsedAmount <= 0n) return
 
-    // Use redeem(shares) instead of withdraw(assets) — vaultBalance is already
-    // in vault shares so this avoids the assets→shares rounding revert.
-    withdraw({
-      address: vaultAddress as `0x${string}`,
-      abi: VAULT_ABI,
-      functionName: "redeem",
-      args: [parsedAmount, address as `0x${string}`, address as `0x${string}`]
+    withdrawCollateral({
+      address: marketAddress as `0x${string}`,
+      abi: MARKET_ABI,
+      functionName: "withdrawCollateral",
+      args: [token.address as `0x${string}`, parsedAmount]
     })
-  }, [amount, address, parsedAmount, withdraw, vaultAddress])
+  }, [amount, address, parsedAmount, withdrawCollateral, token.address, marketAddress])
 
   const handleMax = useCallback(() => {
-    if (mode === "deposit") {
-      setAmount(formatUnits(balance, token.decimals))
-    } else {
-      setAmount(formatUnits(vaultBalance, token.decimals))
-    }
-  }, [mode, balance, vaultBalance, token.decimals])
+    setAmount(formatUnits(walletBalance, token.decimals))
+  }, [walletBalance, token.decimals])
 
   if (!isConnected) {
     return (
-      <div className='flex flex-col items-center justify-center py-12 px-6 text-center'>
-        <div className='w-12 h-12 rounded-full bg-indigo-500/10 flex items-center justify-center mb-4'>
-          <Wallet className='w-6 h-6 text-indigo-400' />
+      <div className='flex flex-col items-center justify-center py-8 px-6 text-center'>
+        <div className='w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center mb-3'>
+          <Wallet className='w-5 h-5 text-indigo-400' />
         </div>
-        <h4 className='text-sm font-medium text-white mb-2'>
-          Connect Your Wallet
-        </h4>
-        <p className='text-xs text-slate-500 max-w-[200px]'>
-          Connect a wallet to deposit into vaults and manage your positions.
+        <p className='text-xs text-slate-500'>
+          Connect a wallet to manage collateral.
         </p>
       </div>
     )
@@ -370,17 +323,21 @@ export function DepositForm() {
   else if (isDepositing) buttonText = "Depositing..."
   else if (isWithdrawing) buttonText = "Withdrawing..."
   else if (approveSuccess && mode === "deposit") buttonText = "Confirm Deposit →"
-  else if (mode === "deposit") buttonText = "Deposit Funds"
-  else buttonText = "Withdraw Funds"
+  else if (mode === "deposit") buttonText = "Deposit Collateral"
+  else buttonText = "Withdraw Collateral"
 
   return (
-    <div className='space-y-5'>
+    <div className='space-y-4'>
       {/* Mode Tabs */}
       <div className='flex bg-midnight-800/50 rounded-lg p-1 border border-midnight-700/50'>
         {(["deposit", "withdraw"] as TabMode[]).map((tab) => (
           <button
             key={tab}
-            onClick={() => setMode(tab)}
+            onClick={() => {
+              setMode(tab)
+              setAmount("")
+              setSteps([])
+            }}
             className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium rounded-md transition-all ${
               mode === tab
                 ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/20"
@@ -397,16 +354,36 @@ export function DepositForm() {
         ))}
       </div>
 
-      {/* Balance Display */}
+      {/* Collateral Token Selector */}
+      <div className='flex gap-2'>
+        {collateralKeys.map((key) => {
+          const t = TOKENS[key]
+          const isSelected = selectedTokenKey === key
+          return (
+            <button
+              key={key}
+              onClick={() => {
+                setSelectedTokenKey(key)
+                setAmount("")
+              }}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
+                isSelected
+                  ? "border-indigo-500/40 bg-indigo-500/10 text-indigo-300"
+                  : "border-midnight-700/50 text-slate-500 hover:text-slate-300 hover:border-midnight-600/50"
+              }`}
+            >
+              <TokenIcon symbol={t.symbol} size='sm' />
+              {t.symbol}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Wallet Balance */}
       <div className='flex items-center justify-between text-xs'>
-        <span className='text-slate-500'>
-          {mode === "deposit" ? "Wallet Balance" : "Vault Balance"}
-        </span>
+        <span className='text-slate-500'>Wallet Balance</span>
         <span className='text-slate-300 font-mono'>
-          {mode === "deposit"
-            ? formatUnits(balance, token.decimals)
-            : formatUnits(vaultBalance, token.decimals)}{" "}
-          {token.symbol}
+          {formatUnits(walletBalance, token.decimals)} {token.symbol}
         </span>
       </div>
 
@@ -443,43 +420,10 @@ export function DepositForm() {
         </div>
       </div>
 
-      {/* Supply APY + Weekly Yield */}
-      {mode === "deposit" && (
-        <div className='px-4 py-3 bg-emerald-500/5 border border-emerald-500/10 rounded-lg space-y-1.5'>
-          <div className='flex items-center justify-between'>
-            <Tooltip
-              content={
-                "Annual yield earned by depositors. Computed as: Borrow APR × Utilization × 90%. " +
-                "Jump Rate Model: below 80% util the rate rises gradually; above 80% jumps steeply."
-              }
-              side='top'
-              width='w-72'
-            >
-              <span className='text-xs text-emerald-400'>Supply APY</span>
-            </Tooltip>
-            <span className='text-xs font-mono font-medium text-emerald-300'>
-              {utilization > 0 ? formatRate(supplyAPY) : "--"}
-            </span>
-          </div>
-          {weeklyYield > 0 ? (
-            <div className='flex items-center justify-between'>
-              <span className='text-[10px] text-slate-500'>
-                Est. weekly yield
-              </span>
-              <span className='text-[10px] font-mono text-slate-400'>
-                +{weeklyYield.toFixed(4)} {token.symbol}
-              </span>
-            </div>
-          ) : (
-            <p className='text-[10px] text-slate-500'>
-              No borrows yet — yield starts once borrowers draw liquidity.
-            </p>
-          )}
-        </div>
+      {/* Transaction Steps (deposit mode) */}
+      {mode === "deposit" && steps.length > 0 && (
+        <TransactionStepper steps={steps} />
       )}
-
-      {/* Transaction Steps */}
-      {steps.length > 0 && <TransactionStepper steps={steps} />}
 
       {/* Action Button */}
       <button
@@ -490,13 +434,6 @@ export function DepositForm() {
         {isProcessing && <Spinner />}
         {buttonText}
       </button>
-
-      {/* Gas Estimate */}
-      <div className='flex items-center justify-center gap-1 text-[10px] text-slate-600'>
-        <span>Est. gas: ~0.002 ETH</span>
-        <span>•</span>
-        <span>Sepolia Testnet</span>
-      </div>
     </div>
   )
 }

@@ -9,6 +9,7 @@ import {
 import { parseUnits, formatUnits, maxUint256 } from "viem"
 import { createPublicClient, http } from "viem"
 import { sepolia } from "viem/chains"
+import { toast } from "sonner"
 import { ERC20_ABI, MARKET_ABI } from "@/lib/contracts"
 import { useAppStore } from "@/store/useAppStore"
 import { usePositions } from "@/hooks/usePositions"
@@ -43,6 +44,31 @@ const VAULT_ID_TO_ADDRESS: Record<string, string> = {
 
 type TabMode = "borrow" | "repay"
 
+function Spinner() {
+  return (
+    <svg
+      className="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  )
+}
+
 function HealthFactorBadge({ value }: { value: number }) {
   if (value === 0) {
     return <span className='text-slate-500 text-xs'>No debt</span>
@@ -64,7 +90,7 @@ function HealthFactorBadge({ value }: { value: number }) {
 
 export function BorrowForm() {
   const { address, isConnected } = useAccount()
-  const { selectedVault } = useAppStore()
+  const { selectedVault, triggerRefresh } = useAppStore()
   const [mode, setMode] = useState<TabMode>("borrow")
   const [amount, setAmount] = useState("")
   const [walletBalance, setWalletBalance] = useState<bigint>(0n)
@@ -103,19 +129,28 @@ export function BorrowForm() {
   const {
     writeContract: borrow,
     data: borrowTxHash,
-    isPending: isBorrowing
+    isPending: isBorrowing,
+    reset: resetBorrow,
+    error: borrowError,
+    isError: isBorrowError
   } = useWriteContract()
 
   const {
     writeContract: approve,
     data: approveTxHash,
-    isPending: isApproving
+    isPending: isApproving,
+    reset: resetApprove,
+    error: approveError,
+    isError: isApproveError
   } = useWriteContract()
 
   const {
     writeContract: repay,
     data: repayTxHash,
-    isPending: isRepaying
+    isPending: isRepaying,
+    reset: resetRepay,
+    error: repayError,
+    isError: isRepayError
   } = useWriteContract()
 
   const { isSuccess: borrowSuccess } = useWaitForTransactionReceipt({
@@ -128,7 +163,7 @@ export function BorrowForm() {
     hash: repayTxHash
   })
 
-  // Fetch wallet balance + allowance (chain reads — wallet state only)
+  // Fetch wallet balance + allowance
   useEffect(() => {
     if (!address || !isConnected || !vaultConfig) return
 
@@ -161,28 +196,55 @@ export function BorrowForm() {
     fetchBalances()
   }, [address, isConnected, vaultConfig, approveSuccess, repaySuccess])
 
-  // Auto-repay after approval
+  // Toast + reset on borrow success
   useEffect(() => {
-    if (approveSuccess && amount && address && vaultConfig) {
-      const parsedAmount = parseUnits(amount, token.decimals)
-      repay({
-        address: vaultConfig.marketAddress as `0x${string}`,
-        abi: MARKET_ABI,
-        functionName: "repay",
-        args: [parsedAmount]
-      })
-    }
-  }, [approveSuccess])
+    if (!borrowSuccess || !borrowTxHash) return
+    const hash = borrowTxHash
+    toast.success("Borrow confirmed!", {
+      description: `${hash.slice(0, 10)}...${hash.slice(-8)}`,
+      action: {
+        label: "View on Etherscan",
+        onClick: () =>
+          window.open(`https://sepolia.etherscan.io/tx/${hash}`, "_blank"),
+      },
+      duration: 6000,
+    })
+    resetBorrow()
+    setAmount("")
+    triggerRefresh()
+    setTimeout(() => refetchPositions(), 5000)
+  }, [borrowSuccess, borrowTxHash, resetBorrow, triggerRefresh, refetchPositions])
 
-  // Refresh backend position after borrow/repay confirmed
+  // Toast + reset on repay success
   useEffect(() => {
-    if (borrowSuccess || repaySuccess) {
-      setAmount("")
-      // Backend will update within 12 blocks (~2min on Sepolia)
-      // Trigger an optimistic refresh after a short delay
-      setTimeout(() => refetchPositions(), 5000)
-    }
-  }, [borrowSuccess, repaySuccess])
+    if (!repaySuccess || !repayTxHash) return
+    const hash = repayTxHash
+    toast.success("Repay confirmed!", {
+      description: `${hash.slice(0, 10)}...${hash.slice(-8)}`,
+      action: {
+        label: "View on Etherscan",
+        onClick: () =>
+          window.open(`https://sepolia.etherscan.io/tx/${hash}`, "_blank"),
+      },
+      duration: 6000,
+    })
+    resetApprove()
+    resetRepay()
+    setAmount("")
+    triggerRefresh()
+    setTimeout(() => refetchPositions(), 5000)
+  }, [repaySuccess, repayTxHash, resetApprove, resetRepay, triggerRefresh, refetchPositions])
+
+  // Toast on any transaction error
+  useEffect(() => {
+    const err = borrowError ?? approveError ?? repayError
+    if (!err) return
+    toast.error("Transaction failed", {
+      description:
+        (err as { shortMessage?: string })?.shortMessage ??
+        err.message?.split("\n")[0],
+    })
+  }, [isBorrowError, isApproveError, isRepayError, borrowError, approveError, repayError])
 
   // Transaction steps for repay mode
   useEffect(() => {
@@ -218,12 +280,8 @@ export function BorrowForm() {
     if (parsedAmount > 0n) {
       newSteps.push({
         label: "Repay Debt",
-        description: repaySuccess
-          ? "Repay confirmed"
-          : isRepaying
-            ? "Repaying..."
-            : "Repay loan",
-        status: repaySuccess ? "completed" : isRepaying ? "active" : "pending",
+        description: isRepaying ? "Repaying..." : "Repay loan",
+        status: isRepaying ? "active" : "pending",
         txHash: repayTxHash
       })
     }
@@ -238,7 +296,6 @@ export function BorrowForm() {
     approveSuccess,
     approveTxHash,
     isRepaying,
-    repaySuccess,
     repayTxHash,
     vaultConfig
   ])
@@ -259,19 +316,21 @@ export function BorrowForm() {
     if (!amount || !address || !vaultConfig) return
     const parsedAmount = parseUnits(amount, token.decimals)
 
-    if (allowance < parsedAmount) {
-      approve({
-        address: vaultConfig.loanAsset as `0x${string}`,
-        abi: ERC20_ABI,
-        functionName: "approve",
-        args: [vaultConfig.marketAddress as `0x${string}`, maxUint256]
-      })
-    } else {
+    // approveSuccess means we just approved this session — go straight to repay
+    // even if the allowance refetch hasn't completed yet
+    if (allowance >= parsedAmount || approveSuccess) {
       repay({
         address: vaultConfig.marketAddress as `0x${string}`,
         abi: MARKET_ABI,
         functionName: "repay",
         args: [parsedAmount]
+      })
+    } else {
+      approve({
+        address: vaultConfig.loanAsset as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [vaultConfig.marketAddress as `0x${string}`, maxUint256]
       })
     }
   }
@@ -311,6 +370,16 @@ export function BorrowForm() {
   const repayExceedsDebt =
     mode === "repay" && parseFloat(amount || "0") > totalDebt * 1.01 // 1% buffer for interest
   const hasError = borrowExceedsLimit || repayExceedsDebt
+  const isProcessing = isBorrowing || isApproving || isRepaying
+
+  let buttonText: string
+  if (isBorrowing) buttonText = "Borrowing..."
+  else if (isApproving) buttonText = "Approving..."
+  else if (isRepaying) buttonText = "Repaying..."
+  else if (approveSuccess && mode === "repay") buttonText = `Confirm Repay →`
+  else if (mode === "borrow")
+    buttonText = borrowingPower === 0 ? "Deposit Collateral First" : `Borrow ${token.symbol}`
+  else buttonText = totalDebt === 0 ? "No Outstanding Debt" : `Repay ${token.symbol}`
 
   return (
     <div className='space-y-5'>
@@ -475,9 +544,9 @@ export function BorrowForm() {
             placeholder='0.00'
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className='flex-1 bg-transparent text-white placeholder-slate-600 text-sm outline-none font-mono'
+            className='flex-1 min-w-0 bg-transparent text-white placeholder-slate-600 text-sm outline-none font-mono'
           />
-          <span className='text-slate-400 text-xs font-medium'>
+          <span className='shrink-0 text-slate-400 text-xs font-medium'>
             {token.symbol}
           </span>
         </div>
@@ -509,39 +578,14 @@ export function BorrowForm() {
           !amount ||
           parsedAmount === 0n ||
           hasError ||
-          isBorrowing ||
-          isApproving ||
-          isRepaying ||
+          isProcessing ||
           (mode === "borrow" && borrowingPower === 0)
         }
-        className='w-full py-3 px-4 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-indigo-600 hover:bg-indigo-500 text-white'
+        className='w-full py-3 px-4 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.2)] hover:shadow-[0_0_30px_rgba(79,70,229,0.4)]'
       >
-        {mode === "borrow"
-          ? isBorrowing
-            ? "Borrowing..."
-            : borrowSuccess
-              ? "Borrowed ✓"
-              : borrowingPower === 0
-                ? "Deposit Collateral First"
-                : `Borrow ${token.symbol}`
-          : isApproving
-            ? "Approving..."
-            : isRepaying
-              ? "Repaying..."
-              : repaySuccess
-                ? "Repaid ✓"
-                : totalDebt === 0
-                  ? "No Outstanding Debt"
-                  : `Repay ${token.symbol}`}
+        {isProcessing && <Spinner />}
+        {buttonText}
       </button>
-
-      {/* Staleness notice */}
-      {(borrowSuccess || repaySuccess) && (
-        <p className='text-[10px] text-slate-500 text-center'>
-          Position updating... reflects on-chain in ~2 min (12 block
-          confirmations).
-        </p>
-      )}
 
       {(totalDebt > 0 || borrowingPower > 0) && (
         <p className='text-[10px] text-slate-600 text-center'>

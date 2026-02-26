@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { Header } from "@/components/Header"
 import { BorrowForm } from "@/components/BorrowForm"
+import { CollateralForm } from "@/components/CollateralForm"
 import { useAccount } from "wagmi"
 import { useAppStore } from "@/store/useAppStore"
 import { usePositions } from "@/hooks/usePositions"
@@ -31,10 +32,16 @@ function HealthBar({ value }: { value: number }) {
   )
 }
 
+const VAULT_ID_TO_MARKET_ADDRESS: Record<string, string> = {
+  usdc: "0x12f8DA89619C40553d9eA50aAce593cEb2f3eFcE",
+  weth: "0x9ef4141b954947800A47F46D11a6B2f366d1673b",
+  wbtc: "0xD1928f50281c65fBC73c8a644D259F1A6633AC56"
+}
+
 export default function BorrowPage() {
   const { address, isConnected } = useAccount()
   const { selectedVault, setSelectedVault } = useAppStore()
-  const { positions } = usePositions(address)
+  const { positions, refetch: refetchPositions } = usePositions(address)
 
   useEffect(() => {
     if (!selectedVault) setSelectedVault("usdc")
@@ -51,6 +58,9 @@ export default function BorrowPage() {
     weth: "0xbbc4c7FbCcF0faa27821c4F44C01D3F81C088070",
     wbtc: "0xBCB5fcA37f87a97eB1C5d6c9a92749e0F41161f0"
   }
+
+  const activeMarketAddress =
+    VAULT_ID_TO_MARKET_ADDRESS[selectedVault ?? "usdc"]
 
   return (
     <>
@@ -165,8 +175,28 @@ export default function BorrowPage() {
             </div>
           </div>
 
-          {/* Right: Borrow Form */}
-          <div className='lg:col-span-2'>
+          {/* Right: Collateral + Borrow Forms */}
+          <div className='lg:col-span-2 space-y-6'>
+            {/* Collateral Management */}
+            <div className='glass-panel rounded-2xl overflow-hidden'>
+              <div className='px-6 py-5 border-b border-midnight-700/50 bg-white/5'>
+                <h3 className='text-sm font-semibold text-white'>
+                  Collateral Management
+                </h3>
+                <p className='text-xs text-slate-500 mt-1'>
+                  Deposit collateral to unlock borrowing power
+                </p>
+              </div>
+              <div className='p-6'>
+                <CollateralForm
+                  marketAddress={activeMarketAddress}
+                  selectedVaultId={selectedVault ?? "usdc"}
+                  onSuccess={refetchPositions}
+                />
+              </div>
+            </div>
+
+            {/* Borrow & Repay */}
             <div className='glass-panel rounded-2xl overflow-hidden'>
               <div className='px-6 py-5 border-b border-midnight-700/50 bg-white/5'>
                 <h3 className='text-sm font-semibold text-white'>

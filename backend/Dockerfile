@@ -11,7 +11,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npx prisma generate && npm run build
+RUN DATABASE_URL=postgresql://x:x@localhost:5432/x npx prisma generate && npm run build
 
 # Stage 3: Lean production image
 FROM node:20-alpine AS runner

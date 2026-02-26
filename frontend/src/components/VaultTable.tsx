@@ -6,6 +6,7 @@ import { TokenIcon } from "@/components/TokenIcon"
 import { Tooltip } from "@/components/Tooltip"
 import { useVaults } from "@/hooks/useVaults"
 import { computeSupplyAPY, computeBorrowAPR, formatRate } from "@/lib/irm"
+import { MarketUtilizationGraph } from "@/components/MarketUtilizationGraph"
 import type { VaultSummary, SeverityLevel } from "@/types/metrics"
 
 // ── Tooltip copy ────────────────────────────────────────────────────────────
@@ -214,30 +215,17 @@ export function VaultTable() {
 
                   {/* Utilization */}
                   <td className='px-6 py-5'>
-                    <div className='flex flex-col gap-1'>
+                    <div className='flex flex-col gap-1.5'>
                       <span
-                        className={`font-mono ${isAboveKink ? "text-orange-400" : "text-white"}`}
+                        className={`font-mono text-sm ${isAboveKink ? "text-orange-400" : "text-white"}`}
                       >
                         {utilPct}
                       </span>
-                      {hasData && (
-                        <div className='w-16 h-1 bg-midnight-700 rounded-full overflow-hidden'>
-                          <div
-                            className={`h-full rounded-full ${
-                              vault.utilization >= 0.95
-                                ? "bg-red-500"
-                                : vault.utilization >= 0.8
-                                  ? "bg-orange-500"
-                                  : vault.utilization >= 0.6
-                                    ? "bg-yellow-500"
-                                    : "bg-emerald-500"
-                            }`}
-                            style={{
-                              width: `${Math.min(vault.utilization * 100, 100)}%`
-                            }}
-                          />
-                        </div>
-                      )}
+                      <MarketUtilizationGraph
+                        utilization={hasData ? vault.utilization : 0}
+                        width={140}
+                        height={52}
+                      />
                     </div>
                   </td>
 

@@ -10,6 +10,7 @@ import { TOKENS } from "@/lib/addresses"
 import { computeSupplyAPY, computeBorrowAPR, formatRate, IRM } from "@/lib/irm"
 import { DollarSign, Activity, TrendingUp, X } from "lucide-react"
 import { TokenIcon } from "@/components/TokenIcon"
+import { MarketUtilizationGraph } from "@/components/MarketUtilizationGraph"
 
 // ── Tooltip copy ─────────────────────────────────────────────────────────────
 
@@ -260,6 +261,37 @@ export default function VaultDashboard() {
                       ↑ above kink
                     </span>
                   )}
+                </div>
+              </div>
+
+              {/* Interest Rate Curve */}
+              <div className='mt-4'>
+                <div className='flex items-center justify-between mb-2'>
+                  <span className='text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em]'>
+                    Interest Rate Curve
+                  </span>
+                  <span className='text-[10px] text-slate-600'>
+                    Borrow APR vs utilization
+                  </span>
+                </div>
+                <MarketUtilizationGraph
+                  utilization={selectedVaultData?.utilization ?? 0}
+                  width={332}
+                  height={110}
+                />
+                <div className='flex items-center gap-4 mt-2'>
+                  <span className='flex items-center gap-1 text-[10px] text-slate-600'>
+                    <span className='inline-block w-2.5 h-0.5 rounded bg-emerald-500' />
+                    Below kink
+                  </span>
+                  <span className='flex items-center gap-1 text-[10px] text-slate-600'>
+                    <span className='inline-block w-2.5 h-0.5 rounded bg-amber-500' />
+                    Above kink
+                  </span>
+                  <span className='flex items-center gap-1 text-[10px] text-slate-600'>
+                    <span className='inline-block w-2.5 border-t border-dashed border-indigo-400' />
+                    Kink (80%)
+                  </span>
                 </div>
               </div>
             </div>

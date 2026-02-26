@@ -7,6 +7,7 @@ import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 import { SEPOLIA_ADDRESSES, TOKENS } from "@/lib/addresses";
 import { ERC20_ABI, VAULT_ABI } from "@/lib/contracts";
+import { VAULT_REGISTRY } from "@/lib/vault-registry";
 import { useAppStore } from "@/store/useAppStore";
 import {
   TransactionStepper,
@@ -20,6 +21,11 @@ const client = createPublicClient({
   transport: http(process.env.NEXT_PUBLIC_RPC_URL || "https://eth-sepolia.g.alchemy.com/v2/demo"),
 });
 
+// Map from lowercase vault ID ("usdc", "weth", "wbtc") to VaultConfig
+const VAULT_CONFIG_BY_ID = Object.fromEntries(
+  VAULT_REGISTRY.map((v) => [v.symbol.toLowerCase(), v])
+);
+
 type TabMode = "deposit" | "withdraw";
 
 export function DepositForm() {
@@ -32,10 +38,16 @@ export function DepositForm() {
   const [allowance, setAllowance] = useState<bigint>(0n);
   const [steps, setSteps] = useState<TransactionStep[]>([]);
 
-  // Get token info based on selected vault
+  // Get token info and vault address based on selected vault
   const token = selectedVault
     ? TOKENS[selectedVault.toUpperCase() as keyof typeof TOKENS]
     : TOKENS.USDC;
+
+  const vaultAddress = (
+    selectedVault
+      ? VAULT_CONFIG_BY_ID[selectedVault]?.vaultAddress
+      : undefined
+  ) ?? SEPOLIA_ADDRESSES.vault;
 
   // Write hooks
   const {
@@ -67,6 +79,15 @@ export function DepositForm() {
     hash: withdrawTxHash,
   });
 
+  // Reset form state when market changes
+  useEffect(() => {
+    setAmount("");
+    setBalance(0n);
+    setVaultBalance(0n);
+    setAllowance(0n);
+    setSteps([]);
+  }, [vaultAddress]);
+
   // Fetch balances
   useEffect(() => {
     if (!address || !isConnected) return;
@@ -81,7 +102,7 @@ export function DepositForm() {
             args: [address as `0x${string}`],
           }),
           client.readContract({
-            address: SEPOLIA_ADDRESSES.vault as `0x${string}`,
+            address: vaultAddress as `0x${string}`,
             abi: VAULT_ABI,
             functionName: "balanceOf",
             args: [address as `0x${string}`],
@@ -92,7 +113,7 @@ export function DepositForm() {
             functionName: "allowance",
             args: [
               address as `0x${string}`,
-              SEPOLIA_ADDRESSES.vault as `0x${string}`,
+              vaultAddress as `0x${string}`,
             ],
           }),
         ]);
@@ -106,7 +127,7 @@ export function DepositForm() {
     }
 
     fetchBalances();
-  }, [address, isConnected, token.address, approveSuccess, depositSuccess, withdrawSuccess]);
+  }, [address, isConnected, token.address, vaultAddress, approveSuccess, depositSuccess, withdrawSuccess]);
 
   // Update steps based on transaction state
   useEffect(() => {
@@ -185,12 +206,12 @@ export function DepositForm() {
         address: token.address as `0x${string}`,
         abi: ERC20_ABI,
         functionName: "approve",
-        args: [SEPOLIA_ADDRESSES.vault as `0x${string}`, maxUint256],
+        args: [vaultAddress as `0x${string}`, maxUint256],
       });
     } else {
       // Deposit directly
       deposit({
-        address: SEPOLIA_ADDRESSES.vault as `0x${string}`,
+        address: vaultAddress as `0x${string}`,
         abi: VAULT_ABI,
         functionName: "deposit",
         args: [parsedAmount, address as `0x${string}`],
@@ -203,7 +224,7 @@ export function DepositForm() {
     if (approveSuccess && amount && address) {
       const parsedAmount = parseUnits(amount, token.decimals);
       deposit({
-        address: SEPOLIA_ADDRESSES.vault as `0x${string}`,
+        address: vaultAddress as `0x${string}`,
         abi: VAULT_ABI,
         functionName: "deposit",
         args: [parsedAmount, address as `0x${string}`],
@@ -216,7 +237,7 @@ export function DepositForm() {
     const parsedAmount = parseUnits(amount, token.decimals);
 
     withdraw({
-      address: SEPOLIA_ADDRESSES.vault as `0x${string}`,
+      address: vaultAddress as `0x${string}`,
       abi: VAULT_ABI,
       functionName: "withdraw",
       args: [

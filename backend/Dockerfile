@@ -11,7 +11,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN DATABASE_URL=postgresql://x:x@localhost:5432/x npx prisma generate && npm run build
+# DATABASE_URL is required by prisma.config.ts at generate time but not used at runtime in this stage
+ENV DATABASE_URL=postgresql://x:x@localhost:5432/x
+RUN npx prisma generate && npm run build
 
 # Stage 3: Lean production image
 FROM node:20-alpine AS runner

@@ -3,8 +3,29 @@
 import Link from "next/link";
 import { ArrowRight, TrendingUp, Shield } from "lucide-react";
 import { TokenIcon } from "@/components/TokenIcon";
+import { Tooltip } from "@/components/Tooltip";
 import { useVaults } from "@/hooks/useVaults";
+import { computeSupplyAPY, computeBorrowAPR, formatRate } from "@/lib/irm";
 import type { VaultSummary, SeverityLevel } from "@/types/metrics";
+
+// ── Tooltip copy ────────────────────────────────────────────────────────────
+
+const TIPS = {
+  tvl: "Total assets deposited by lenders into this vault. Higher TVL = deeper liquidity for borrowers and lower slippage during liquidations.",
+  supplyApy:
+    "Annual yield earned by lenders. Computed as: Borrow APR × Utilization × 90% (10% protocol fee). " +
+    "Rising utilization pushes APY higher — but above the 80% kink, the rate jumps steeply.",
+  utilization:
+    "Fraction of deposited funds currently borrowed. Formula: Total Borrows / Total Assets. " +
+    "Optimal target is 80%. Above 80%, the jump-rate model causes borrow costs to spike sharply, incentivising repayment.",
+  borrowApr:
+    "Jump Rate Model (same for all 3 markets):\n" +
+    "• Below 80% util: 2% + utilization × 4%\n" +
+    "• Above 80% util: 5.2% + (utilization − 80%) × 60%\n" +
+    "At 80% util the kink kicks in and rates rise sharply to protect lenders.",
+} as const;
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function severityToHealthStatus(
   severity: SeverityLevel,
@@ -16,20 +37,16 @@ function severityToHealthStatus(
   return "elevated";
 }
 
-function formatTVL(totalSupply: number, symbol: string) {
-  const isStablecoin =
-    symbol.toLowerCase().includes("usdc") || symbol.toLowerCase().includes("usd");
-  const usdValue = isStablecoin ? totalSupply : totalSupply;
+/** Returns USD TVL string and native token string for a vault. */
+function formatTVL(totalSupply: number, symbol: string, oraclePrice: number) {
+  const usdValue = totalSupply * oraclePrice;
   return {
-    raw: totalSupply.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+    native: `${totalSupply.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${symbol}`,
     usd: `$${usdValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
   };
 }
 
-function simulatedAPY(utilization: number): string {
-  if (utilization === 0) return "0.00%";
-  return `${(utilization * 8 * 100).toFixed(2)}%`;
-}
+// ── Component ────────────────────────────────────────────────────────────────
 
 export function VaultTable() {
   const { data, loading, error } = useVaults();
@@ -89,9 +106,15 @@ export function VaultTable() {
           <thead>
             <tr className="border-b border-midnight-700/50 text-[10px] font-bold text-slate-500 uppercase tracking-[0.1em]">
               <th className="px-8 py-5">Asset</th>
-              <th className="px-6 py-5">TVL</th>
-              <th className="px-6 py-5">APY (Sim)</th>
-              <th className="px-6 py-5">Utilization</th>
+              <th className="px-6 py-5">
+                <Tooltip content={TIPS.tvl} side="bottom">TVL</Tooltip>
+              </th>
+              <th className="px-6 py-5">
+                <Tooltip content={TIPS.supplyApy} side="bottom" width="w-72">Supply APY</Tooltip>
+              </th>
+              <th className="px-6 py-5">
+                <Tooltip content={TIPS.utilization} side="bottom" width="w-72">Utilization</Tooltip>
+              </th>
               <th className="px-6 py-5">Status</th>
               <th className="px-6 py-5 text-right">Actions</th>
             </tr>
@@ -100,9 +123,11 @@ export function VaultTable() {
             {vaults.map((vault) => {
               const hasData = !!vault.lastUpdated;
               const healthStatus = severityToHealthStatus(vault.overallSeverity, hasData);
-              const tvl = formatTVL(vault.totalSupply, vault.symbol);
-              const apy = hasData ? simulatedAPY(vault.utilization) : "--";
+              const tvl = formatTVL(vault.totalSupply, vault.symbol, vault.oraclePrice);
+              const supplyAPY = hasData ? formatRate(computeSupplyAPY(vault.utilization)) : "--";
+              const borrowAPR = hasData ? formatRate(computeBorrowAPR(vault.utilization)) : "--";
               const utilPct = hasData ? `${(vault.utilization * 100).toFixed(1)}%` : "--";
+              const isAboveKink = hasData && vault.utilization > 0.80;
 
               return (
                 <tr key={vault.vaultAddress} className="hover:bg-white/5 transition-all">
@@ -119,34 +144,68 @@ export function VaultTable() {
                       </div>
                     </div>
                   </td>
+
+                  {/* TVL — USD value using oracle price */}
                   <td className="px-6 py-5">
                     {hasData ? (
                       <div>
                         <span className="text-white font-mono font-medium">{tvl.usd}</span>
-                        <span className="block text-xs text-slate-500 font-mono">
-                          {tvl.raw} {vault.symbol}
-                        </span>
+                        <span className="block text-xs text-slate-500 font-mono">{tvl.native}</span>
                       </div>
                     ) : (
                       <span className="text-slate-500 font-mono">--</span>
                     )}
                   </td>
+
+                  {/* Supply APY — real IRM formula */}
                   <td className="px-6 py-5">
                     {hasData && vault.utilization > 0 ? (
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-emerald-400 font-mono font-medium">{apy}</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400 font-mono font-medium">{supplyAPY}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          Borrow: {borrowAPR}
+                          {isAboveKink && (
+                            <span className="ml-1 text-orange-400">↑ above kink</span>
+                          )}
+                        </span>
                       </div>
                     ) : (
-                      <span className="text-slate-500 font-mono">{apy}</span>
+                      <span className="text-slate-500 font-mono">{supplyAPY}</span>
                     )}
                   </td>
+
+                  {/* Utilization */}
                   <td className="px-6 py-5">
-                    <span className="text-white font-mono">{utilPct}</span>
+                    <div className="flex flex-col gap-1">
+                      <span className={`font-mono ${isAboveKink ? "text-orange-400" : "text-white"}`}>
+                        {utilPct}
+                      </span>
+                      {hasData && (
+                        <div className="w-16 h-1 bg-midnight-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              vault.utilization >= 0.95
+                                ? "bg-red-500"
+                                : vault.utilization >= 0.80
+                                ? "bg-orange-500"
+                                : vault.utilization >= 0.60
+                                ? "bg-yellow-500"
+                                : "bg-emerald-500"
+                            }`}
+                            style={{ width: `${Math.min(vault.utilization * 100, 100)}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </td>
+
                   <td className="px-6 py-5">
                     <HealthBadge status={healthStatus} />
                   </td>
+
                   <td className="px-6 py-5 text-right">
                     <Link
                       href="/deposit"
@@ -160,6 +219,16 @@ export function VaultTable() {
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* IRM legend */}
+      <div className="px-8 py-3 border-t border-midnight-700/30 flex items-center gap-4 flex-wrap">
+        <Tooltip content={TIPS.borrowApr} side="top" width="w-80">
+          <span className="text-[10px] text-slate-500">Jump Rate Model</span>
+        </Tooltip>
+        <span className="text-[10px] text-slate-600">
+          Kink at 80% · Base 2% · Slope₁ 4% · Slope₂ 60% · Protocol fee 10%
+        </span>
       </div>
     </div>
   );

@@ -8,8 +8,11 @@ import { sepolia } from "viem/chains";
 import { ERC20_ABI, MARKET_ABI } from "@/lib/contracts";
 import { useAppStore } from "@/store/useAppStore";
 import { usePositions } from "@/hooks/usePositions";
+import { useVaults } from "@/hooks/useVaults";
 import { getVaultConfig } from "@/lib/vault-registry";
 import { TOKENS } from "@/lib/addresses";
+import { computeBorrowAPR, formatRate } from "@/lib/irm";
+import { Tooltip } from "@/components/Tooltip";
 import {
   TransactionStepper,
   type TransactionStep,
@@ -66,6 +69,14 @@ export function BorrowForm() {
   const token = selectedVault
     ? TOKENS[selectedVault.toUpperCase() as keyof typeof TOKENS]
     : TOKENS.USDC;
+
+  // Backend market data for live borrow APR
+  const { data: vaultsData } = useVaults();
+  const vaultSnapshot = vaultsData?.vaults.find(
+    (v) => v.vaultAddress.toLowerCase() === vaultAddress?.toLowerCase()
+  );
+  const borrowAPR = computeBorrowAPR(vaultSnapshot?.utilization ?? 0);
+  const isAboveKink = (vaultSnapshot?.utilization ?? 0) > 0.80;
 
   // Backend position data
   const { positions, refetch: refetchPositions } = usePositions(address);
@@ -284,24 +295,74 @@ export function BorrowForm() {
       {/* Position Summary from backend */}
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-midnight-800/40 rounded-lg p-3 border border-midnight-700/30">
-          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Debt</div>
+          <Tooltip
+            content="Your outstanding debt including accrued interest. Interest compounds continuously based on the current borrow APR. Repay to reduce this and improve your health factor."
+            side="bottom"
+            width="w-64"
+          >
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Debt</div>
+          </Tooltip>
           <div className="text-sm font-mono text-white">
             ~{totalDebt.toFixed(2)}
           </div>
           <div className="text-[10px] text-slate-600 mt-0.5">{token.symbol}</div>
         </div>
         <div className="bg-midnight-800/40 rounded-lg p-3 border border-midnight-700/30">
-          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Available</div>
+          <Tooltip
+            content={
+              "Maximum additional amount you can borrow without risking liquidation. " +
+              "Formula: (Collateral Value × 85% LLTV) − Current Debt. " +
+              "Deposit more collateral to increase this limit."
+            }
+            side="bottom"
+            width="w-64"
+          >
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Available</div>
+          </Tooltip>
           <div className="text-sm font-mono text-white">
             {borrowingPower.toFixed(2)}
           </div>
           <div className="text-[10px] text-slate-600 mt-0.5">{token.symbol}</div>
         </div>
         <div className="bg-midnight-800/40 rounded-lg p-3 border border-midnight-700/30">
-          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Health</div>
+          <Tooltip
+            content={
+              "Health Factor = Collateral Value × 85% LLTV / Total Debt. " +
+              "≥ 2.0 Safe · < 1.5 Warning · < 1.2 Danger · < 1.0 Liquidatable. " +
+              "Interest accrues continuously, slowly reducing HF over time."
+            }
+            side="bottom"
+            width="w-64"
+          >
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Health</div>
+          </Tooltip>
           <div className="flex items-center h-[20px]">
             <HealthFactorBadge value={healthFactor} />
           </div>
+        </div>
+      </div>
+
+      {/* Borrow APR */}
+      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-midnight-800/30 border border-midnight-700/30">
+        <Tooltip
+          content={
+            "Annual interest rate charged to borrowers. Jump Rate Model (same for all markets):\n" +
+            "• Below 80% util: 2% + util × 4% (gradual)\n" +
+            "• Above 80% util: 5.2% + (util − 80%) × 60% (sharp jump)\n" +
+            "The jump incentivises repayment before the market reaches full utilization."
+          }
+          side="top"
+          width="w-72"
+        >
+          <span className="text-[10px] text-slate-500 uppercase tracking-wider">Borrow APR</span>
+        </Tooltip>
+        <div className="flex items-center gap-1.5">
+          <span className={`text-xs font-mono font-semibold ${isAboveKink ? "text-orange-400" : "text-white"}`}>
+            {formatRate(borrowAPR)}
+          </span>
+          {isAboveKink && (
+            <span className="text-[10px] text-orange-400 font-medium">↑ above kink</span>
+          )}
         </div>
       </div>
 

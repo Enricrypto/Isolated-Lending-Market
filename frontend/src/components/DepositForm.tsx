@@ -9,11 +9,14 @@ import { SEPOLIA_ADDRESSES, TOKENS } from "@/lib/addresses";
 import { ERC20_ABI, VAULT_ABI } from "@/lib/contracts";
 import { VAULT_REGISTRY } from "@/lib/vault-registry";
 import { useAppStore } from "@/store/useAppStore";
+import { useVaults } from "@/hooks/useVaults";
+import { computeSupplyAPY, formatRate } from "@/lib/irm";
+import { Tooltip } from "@/components/Tooltip";
 import {
   TransactionStepper,
   type TransactionStep,
 } from "./TransactionStepper";
-import { Wallet, ArrowDownToLine, ArrowUpFromLine, Info } from "lucide-react";
+import { Wallet, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import { TokenIcon } from "@/components/TokenIcon";
 
 const client = createPublicClient({
@@ -31,6 +34,7 @@ type TabMode = "deposit" | "withdraw";
 export function DepositForm() {
   const { address, isConnected } = useAccount();
   const { selectedVault } = useAppStore();
+  const { data: vaultsData } = useVaults();
   const [mode, setMode] = useState<TabMode>("deposit");
   const [amount, setAmount] = useState("");
   const [balance, setBalance] = useState<bigint>(0n);
@@ -48,6 +52,17 @@ export function DepositForm() {
       ? VAULT_CONFIG_BY_ID[selectedVault]?.vaultAddress
       : undefined
   ) ?? SEPOLIA_ADDRESSES.vault;
+
+  // Real supply APY from backend utilization + IRM formula
+  const vaultSnapshot = vaultsData?.vaults.find(
+    (v) => v.vaultAddress.toLowerCase() === vaultAddress.toLowerCase()
+  );
+  const utilization = vaultSnapshot?.utilization ?? 0;
+  const supplyAPY = computeSupplyAPY(utilization);
+  const weeklyYield =
+    amount && parseFloat(amount) > 0 && supplyAPY > 0
+      ? parseFloat(amount) * supplyAPY / 52
+      : 0;
 
   // Write hooks
   const {
@@ -256,10 +271,7 @@ export function DepositForm() {
     }
   };
 
-  // Projected weekly yield (simple calculation)
-  const projectedWeeklyYield = amount
-    ? (parseFloat(amount) * 0.0524 * 7) / 365
-    : 0;
+  // weeklyYield already computed above using real IRM supply APY
 
   if (!isConnected) {
     return (
@@ -351,18 +363,38 @@ export function DepositForm() {
         </div>
       </div>
 
-      {/* Projected Yield */}
-      {mode === "deposit" && amount && parseFloat(amount) > 0 && (
-        <div className="flex items-center justify-between px-4 py-3 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
-          <div className="flex items-center gap-2">
-            <Info className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-xs text-emerald-400">
-              Projected Weekly Yield
+      {/* Supply APY + Projected Weekly Yield */}
+      {mode === "deposit" && (
+        <div className="px-4 py-3 bg-emerald-500/5 border border-emerald-500/10 rounded-lg space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Tooltip
+              content={
+                "Annual yield earned by depositors. Computed as: Borrow APR × Utilization × 90%. " +
+                "This uses the Jump Rate Model: below 80% util the rate rises gradually; " +
+                "above 80% it jumps steeply, rewarding lenders during high-demand periods."
+              }
+              side="top"
+              width="w-72"
+            >
+              <span className="text-xs text-emerald-400">Supply APY</span>
+            </Tooltip>
+            <span className="text-xs font-mono font-medium text-emerald-300">
+              {utilization > 0 ? formatRate(supplyAPY) : "--"}
             </span>
           </div>
-          <span className="text-xs font-mono font-medium text-emerald-300">
-            +{projectedWeeklyYield.toFixed(4)} {token.symbol}
-          </span>
+          {weeklyYield > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-500">Est. weekly yield</span>
+              <span className="text-[10px] font-mono text-slate-400">
+                +{weeklyYield.toFixed(4)} {token.symbol}
+              </span>
+            </div>
+          )}
+          {utilization === 0 && (
+            <p className="text-[10px] text-slate-500">
+              No borrows yet — yield starts once borrowers draw liquidity.
+            </p>
+          )}
         </div>
       )}
 

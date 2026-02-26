@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   ChevronDown,
   FlaskConical,
+  Banknote,
 } from "lucide-react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 
@@ -17,6 +18,7 @@ const coreNavigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Monitoring & Analytics", href: "/monitoring", icon: TrendingUp },
   { name: "Token Management", href: "/deposit", icon: Wallet },
+  { name: "Borrow & Repay", href: "/borrow", icon: Banknote },
 ];
 
 const adminNavigation = [

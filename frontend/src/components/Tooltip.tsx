@@ -11,6 +11,13 @@ interface TooltipProps {
   side?: "top" | "bottom";
   /** Width class (default: w-60) */
   width?: string;
+  /**
+   * Horizontal alignment of the bubble relative to the trigger.
+   * - "center" (default): centred on the trigger — can overflow on mobile near edges
+   * - "start": left edge of bubble aligns to left edge of trigger — safe near left edge
+   * - "end": right edge of bubble aligns to right edge of trigger — safe near right edge
+   */
+  align?: "start" | "center" | "end";
 }
 
 /**
@@ -20,11 +27,29 @@ interface TooltipProps {
  *   <Tooltip content="Explanation...">Label</Tooltip>
  *   <Tooltip content="Explanation..." />   // icon-only
  */
-export function Tooltip({ content, children, side = "top", width = "w-60" }: TooltipProps) {
+export function Tooltip({
+  content,
+  children,
+  side = "top",
+  width = "w-60",
+  align = "center",
+}: TooltipProps) {
   const bubblePos =
-    side === "top"
-      ? "bottom-full mb-2"
-      : "top-full mt-2";
+    side === "top" ? "bottom-full mb-2" : "top-full mt-2";
+
+  const bubbleAlign =
+    align === "start"
+      ? "left-0"
+      : align === "end"
+      ? "right-0"
+      : "left-1/2 -translate-x-1/2";
+
+  const arrowAlign =
+    align === "start"
+      ? "left-3"
+      : align === "end"
+      ? "right-3"
+      : "left-1/2 -translate-x-1/2";
 
   const arrowPos =
     side === "top"
@@ -38,7 +63,7 @@ export function Tooltip({ content, children, side = "top", width = "w-60" }: Too
 
       {/* Bubble */}
       <span
-        className={`absolute left-1/2 -translate-x-1/2 ${bubblePos} ${width}
+        className={`absolute ${bubbleAlign} ${bubblePos} ${width}
           p-2.5 rounded-lg bg-[#0d1117] border border-indigo-500/20 shadow-xl
           text-[11px] text-slate-300 leading-relaxed font-normal
           opacity-0 group-hover:opacity-100 transition-opacity duration-150
@@ -47,8 +72,7 @@ export function Tooltip({ content, children, side = "top", width = "w-60" }: Too
         {content}
         {/* Arrow */}
         <span
-          className={`absolute left-1/2 -translate-x-1/2 ${arrowPos}
-            border-[5px] border-transparent`}
+          className={`absolute ${arrowAlign} ${arrowPos} border-[5px] border-transparent`}
         />
       </span>
     </span>

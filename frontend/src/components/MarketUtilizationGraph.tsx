@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useCallback, useId } from "react"
+import { useMemo, useState, useCallback, useId, useRef, useEffect } from "react"
 import { computeBorrowAPR, computeSupplyAPY, formatRate, IRM } from "@/lib/irm"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -46,13 +46,28 @@ export function MarketUtilizationGraph({
   utilization,
   kink = IRM.OPTIMAL,
   interestCurve,
-  width = 280,
+  width: externalWidth,
   height = 100,
   showSupplyAPY = false,
   className = "",
 }: MarketUtilizationGraphProps) {
   // Unique prefix for SVG def IDs — prevents conflicts when rendered multiple times
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "")
+
+  // Fluid width: fill container when no explicit width is provided
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(externalWidth ?? 280)
+  useEffect(() => {
+    if (externalWidth !== undefined) return
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width
+      if (w > 0) setWidth(w)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [externalWidth])
 
   const [hover, setHover] = useState<{ svgX: number; u: number } | null>(null)
 
@@ -132,8 +147,9 @@ export function MarketUtilizationGraph({
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div
+      ref={containerRef}
       className={`relative select-none ${className}`}
-      style={{ width, height }}
+      style={{ width: externalWidth !== undefined ? width : "100%", height }}
     >
       <svg
         width={width}

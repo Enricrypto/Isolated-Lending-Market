@@ -225,7 +225,7 @@ export default function VaultDashboard() {
               {/* Market Stats */}
               <div className='grid grid-cols-2 gap-3'>
                 <div className='bg-midnight-900/50 rounded-lg p-3 border border-midnight-700/30'>
-                  <Tooltip content={TIPS.currentApy} side='bottom' width='w-72'>
+                  <Tooltip content={TIPS.currentApy} side='bottom' width='w-72' align='start'>
                     <span className='text-[10px] text-slate-500 uppercase tracking-wider font-bold block mb-1'>
                       Supply APY
                     </span>
@@ -242,7 +242,7 @@ export default function VaultDashboard() {
                   </span>
                 </div>
                 <div className='bg-midnight-900/50 rounded-lg p-3 border border-midnight-700/30'>
-                  <Tooltip content={TIPS.borrowApr} side='bottom' width='w-72'>
+                  <Tooltip content={TIPS.borrowApr} side='bottom' width='w-72' align='end'>
                     <span className='text-[10px] text-slate-500 uppercase tracking-wider font-bold block mb-1'>
                       Borrow APR
                     </span>
@@ -276,7 +276,6 @@ export default function VaultDashboard() {
                 </div>
                 <MarketUtilizationGraph
                   utilization={selectedVaultData?.utilization ?? 0}
-                  width={332}
                   height={110}
                 />
                 <div className='flex items-center gap-4 mt-2'>

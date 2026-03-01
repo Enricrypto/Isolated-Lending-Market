@@ -183,6 +183,28 @@ export const MARKET_ABI = [
     stateMutability: "view",
     type: "function",
   },
+  // Risk/fee parameters (used by admin seeding)
+  {
+    inputs: [],
+    name: "lltv",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "liquidationPenalty",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "protocolFee",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
 ] as const;
 
 // ==================== VAULT ABI (ERC4626) ====================
@@ -332,6 +354,32 @@ export const IRM_ABI = [
     inputs: [],
     name: "baseRate",
     outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "slope1",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "slope2",
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "getParameters",
+    outputs: [
+      { name: "_baseRate",           type: "uint256" },
+      { name: "_optimalUtilization", type: "uint256" },
+      { name: "_slope1",             type: "uint256" },
+      { name: "_slope2",             type: "uint256" },
+    ],
     stateMutability: "view",
     type: "function",
   },

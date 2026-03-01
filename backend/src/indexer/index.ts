@@ -18,6 +18,7 @@ import "dotenv/config"
 import { prisma } from "../lib/db"
 import { client, CONFIRMATIONS, DEPLOYMENT_BLOCK } from "../lib/rpc"
 import { processBlockRange, getSyncState } from "./block-processor"
+import { seedMarketParams } from "../lib/seedMarketParams"
 import { logger } from "../lib/logger"
 import type { MarketConfig } from "./listener"
 import type { WatchBlockNumberReturnType } from "viem"
@@ -55,6 +56,11 @@ export async function startIndexer() {
     loanAsset:           m.loanAsset           as `0x${string}`,
     loanAssetDecimals:   m.loanAssetDecimals,
   }))
+
+  // Seed IRM + risk params from chain (non-blocking — failures are logged)
+  seedMarketParams(activeMarkets).catch((err) =>
+    logger.error({ err }, "[indexer] seedMarketParams failed")
+  )
 
   // 2. Determine start block from SyncState
   const syncState    = await getSyncState()

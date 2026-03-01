@@ -21,6 +21,7 @@ import positionsRouter    from "./routes/positions"
 import liquidationsRouter from "./routes/liquidations"
 import indexerRouter      from "./routes/indexer"
 import internalRouter     from "./routes/internal"
+import adminRouter        from "./routes/admin"
 
 import { startIndexer } from "./indexer/index"
 import { startCronJobs } from "./jobs/index"
@@ -85,6 +86,7 @@ app.use("/positions",    positionsRouter)
 app.use("/liquidations", liquidationsRouter)
 app.use("/indexer",      indexerRouter)
 app.use("/internal",     internalRouter)
+app.use("/admin",        adminRouter)
 
 // --- Start ---
 app.listen(PORT, async () => {

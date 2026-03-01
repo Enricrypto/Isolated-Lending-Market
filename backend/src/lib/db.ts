@@ -2,7 +2,7 @@ import { PrismaClient } from "../generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { Pool } from "pg"
 
-function createPrismaClient() {
+function createPrismaClient(): PrismaClient {
   const connectionString = process.env.PG_URL || process.env.DATABASE_URL
   if (!connectionString) {
     throw new Error("PG_URL or DATABASE_URL environment variable is required")

@@ -16,7 +16,7 @@ import { usePositions } from "@/hooks/usePositions"
 import { useVaults } from "@/hooks/useVaults"
 import { getVaultConfig } from "@/lib/vault-registry"
 import { TOKENS } from "@/lib/addresses"
-import { computeBorrowAPR, formatRate } from "@/lib/irm"
+import { formatRate } from "@/lib/irm"
 import { Tooltip } from "@/components/Tooltip"
 import { TransactionStepper, type TransactionStep } from "./TransactionStepper"
 import {
@@ -112,8 +112,10 @@ export function BorrowForm() {
   const vaultSnapshot = vaultsData?.vaults.find(
     (v) => v.vaultAddress.toLowerCase() === vaultAddress?.toLowerCase()
   )
-  const borrowAPR = computeBorrowAPR(vaultSnapshot?.utilization ?? 0)
-  const isAboveKink = (vaultSnapshot?.utilization ?? 0) > 0.8
+  // Use live borrow rate from backend snapshot — never hardcode IRM constants
+  const borrowAPR = vaultSnapshot?.borrowRate ?? 0.02
+  const optimalUtilization = vaultSnapshot?.optimalUtilization ?? 0.80
+  const isAboveKink = (vaultSnapshot?.utilization ?? 0) > optimalUtilization
 
   // Backend position data
   const { positions, refetch: refetchPositions } = usePositions(address)

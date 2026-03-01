@@ -1,17 +1,21 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { Header } from "@/components/Header"
 import { DepositForm } from "@/components/DepositForm"
-import { useAccount } from "wagmi"
 import { useAppStore } from "@/store/useAppStore"
+import { useVaults } from "@/hooks/useVaults"
 import { TOKENS } from "@/lib/addresses"
+import { formatRate } from "@/lib/irm"
 import { Wallet, ArrowRightLeft, Shield } from "lucide-react"
 import { TokenIcon } from "@/components/TokenIcon"
 
+const VAULT_IDS = ["usdc", "weth", "wbtc"] as const
+type VaultId = typeof VAULT_IDS[number]
+
 export default function DepositPage() {
-  const { address, isConnected } = useAccount()
   const { selectedVault, setSelectedVault } = useAppStore()
+  const { data: vaultsData } = useVaults()
 
   // Default to USDC if no vault selected
   useEffect(() => {
@@ -20,11 +24,20 @@ export default function DepositPage() {
     }
   }, [selectedVault, setSelectedVault])
 
-  const vaults = [
-    { id: "usdc" as const, ...TOKENS.USDC, apy: "5.24%" },
-    { id: "weth" as const, ...TOKENS.WETH, apy: "3.42%" },
-    { id: "wbtc" as const, ...TOKENS.WBTC, apy: "0.00%" }
-  ]
+  const vaults = VAULT_IDS.map((id) => {
+    const token = TOKENS[id.toUpperCase() as keyof typeof TOKENS]
+    // Find the live snapshot by matching the vault registry address to the backend symbol
+    const snapshot = vaultsData?.vaults.find(
+      (v) => v.symbol.toUpperCase() === id.toUpperCase()
+    )
+    // lendingRate is the backend-computed supply APY (borrowRate × utilization × (1 − fee))
+    const apyLabel = snapshot?.lendingRate
+      ? formatRate(snapshot.lendingRate)
+      : snapshot?.utilization
+        ? formatRate(snapshot.borrowRate * snapshot.utilization * (1 - (snapshot.protocolFee ?? 0.10)))
+        : "--"
+    return { id, ...token, apyLabel }
+  })
 
   return (
     <>
@@ -85,7 +98,7 @@ export default function DepositPage() {
                       </span>
                     </div>
                     <span className='text-xs font-mono text-emerald-400'>
-                      {vault.apy}
+                      {vault.apyLabel}
                     </span>
                   </button>
                 ))}

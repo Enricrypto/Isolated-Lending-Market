@@ -7,7 +7,7 @@ import { Tooltip } from "@/components/Tooltip"
 import { useAppStore } from "@/store/useAppStore"
 import { useVaults } from "@/hooks/useVaults"
 import { TOKENS } from "@/lib/addresses"
-import { computeSupplyAPY, computeBorrowAPR, formatRate, IRM } from "@/lib/irm"
+import { formatRate } from "@/lib/irm"
 import { DollarSign, Activity, TrendingUp, X } from "lucide-react"
 import { TokenIcon } from "@/components/TokenIcon"
 import { MarketUtilizationGraph } from "@/components/MarketUtilizationGraph"
@@ -58,7 +58,13 @@ export default function VaultDashboard() {
           .reduce((acc, v, _, arr) => acc + v.utilization / arr.length, 0)
       : null
 
-  const avgSupplyAPY = avgUtil !== null ? computeSupplyAPY(avgUtil) : null
+  // Average supply APY — average of backend-provided lendingRate across active markets
+  const avgSupplyAPY =
+    hasAnyData && data
+      ? data.vaults
+          .filter((v) => !!v.lastUpdated)
+          .reduce((acc, v, _, arr) => acc + (v.lendingRate ?? 0) / arr.length, 0)
+      : null
 
   // ── Per-vault data for the selected market sidebar ───────────────────────
   const selectedToken = selectedVault
@@ -70,15 +76,9 @@ export default function VaultDashboard() {
       (v) => selectedToken && v.symbol === selectedToken.symbol
     ) ?? null
 
-  const selectedSupplyAPY =
-    selectedVaultData && selectedVaultData.utilization > 0
-      ? computeSupplyAPY(selectedVaultData.utilization)
-      : 0
-
-  const selectedBorrowAPR =
-    selectedVaultData && selectedVaultData.utilization > 0
-      ? computeBorrowAPR(selectedVaultData.utilization)
-      : IRM.BASE_RATE // minimum rate
+  // Use live rates from backend snapshot — never compute from hardcoded IRM constants
+  const selectedSupplyAPY = selectedVaultData?.lendingRate ?? 0
+  const selectedBorrowAPR = selectedVaultData?.borrowRate ?? selectedVaultData?.baseRate ?? 0.02
 
   // ── Metric cards ─────────────────────────────────────────────────────────
   const metrics = [

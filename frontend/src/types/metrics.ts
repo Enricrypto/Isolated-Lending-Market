@@ -137,6 +137,7 @@ export type TimeRange = "24h" | "7d" | "30d" | "90d";
 // Per-vault summary for protocol overview
 export interface VaultSummary {
   vaultAddress: string;
+  marketAddress: string;
   label: string;
   symbol: string;
   overallSeverity: SeverityLevel;
@@ -144,6 +145,24 @@ export interface VaultSummary {
   totalSupply: number;
   totalBorrows: number;
   oraclePrice: number;
+  /** Live borrow APR from the most recent on-chain snapshot (authoritative). */
+  borrowRate: number;
+  /** Live lending/supply rate from the most recent on-chain snapshot. */
+  lendingRate: number;
+  /** Kink point (e.g. 0.80 = 80%). From on-chain snapshot or DB params. */
+  optimalUtilization: number;
+  /** IRM base rate — from DB (admin-overridable). */
+  baseRate: number;
+  /** IRM slope below kink — from DB. */
+  slope1: number;
+  /** IRM slope above kink — from DB. */
+  slope2: number;
+  /** Loan-to-value threshold — from DB. */
+  lltv: number;
+  /** Liquidation penalty — from DB. */
+  liquidationPenalty: number;
+  /** Protocol fee on interest — from DB. */
+  protocolFee: number;
   lastUpdated: string;
 }
 

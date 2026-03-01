@@ -14,6 +14,11 @@ interface AppStore {
   // UI state
   isSidebarCollapsed: boolean;
   toggleSidebar: () => void;
+
+  // Mobile nav
+  mobileMenuOpen: boolean;
+  openMobileMenu: () => void;
+  closeMobileMenu: () => void;
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -29,4 +34,9 @@ export const useAppStore = create<AppStore>((set) => ({
   isSidebarCollapsed: false,
   toggleSidebar: () =>
     set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
+
+  // Mobile nav
+  mobileMenuOpen: false,
+  openMobileMenu: () => set({ mobileMenuOpen: true }),
+  closeMobileMenu: () => set({ mobileMenuOpen: false }),
 }));

@@ -11,8 +11,10 @@ import {
   ChevronDown,
   FlaskConical,
   Banknote,
+  X,
 } from "lucide-react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAppStore } from "@/store/useAppStore";
 
 const coreNavigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -22,31 +24,34 @@ const coreNavigation = [
 ];
 
 const adminNavigation = [
+  { name: "Market Admin", href: "/admin", icon: Settings, comingSoon: false },
   { name: "Strategy", href: "/strategy", icon: Settings, comingSoon: true },
   { name: "Risk Engine", href: "/risk-engine", icon: ShieldAlert, comingSoon: true },
 ];
 
-export function Sidebar() {
+// ── Logo ──────────────────────────────────────────────────────────────────────
+function SidebarLogo() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex items-center -space-x-2.5">
+        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-orange-400 to-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)] z-10 border border-white/10" />
+        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-300 to-yellow-500 shadow-[0_0_10px_rgba(245,158,11,0.4)] z-20 mix-blend-screen border border-white/10" />
+        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-300 to-teal-400 shadow-[0_0_10px_rgba(34,211,238,0.4)] z-30 mix-blend-screen border border-white/10" />
+        <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shadow-[0_0_10px_rgba(59,130,246,0.4)] z-40 mix-blend-screen border border-white/10" />
+      </div>
+      <span className="font-brand font-bold text-2xl text-white tracking-tight">
+        LendCore
+      </span>
+    </div>
+  );
+}
+
+// ── Shared nav content (used by both mobile drawer and desktop sidebar) ────────
+function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed top-0 left-0 w-72 h-screen border-r border-midnight-700/50 flex-col bg-midnight-950/80 backdrop-blur-xl hidden md:flex z-50">
-      {/* Logo */}
-      <div className="h-20 flex items-center px-6 border-b border-midnight-700/50 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          {/* Custom LendCore Logo - 4 overlapping circles */}
-          <div className="flex items-center -space-x-2.5">
-            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-orange-400 to-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)] z-10 border border-white/10" />
-            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-300 to-yellow-500 shadow-[0_0_10px_rgba(245,158,11,0.4)] z-20 mix-blend-screen border border-white/10" />
-            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-300 to-teal-400 shadow-[0_0_10px_rgba(34,211,238,0.4)] z-30 mix-blend-screen border border-white/10" />
-            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shadow-[0_0_10px_rgba(59,130,246,0.4)] z-40 mix-blend-screen border border-white/10" />
-          </div>
-          <span className="font-brand font-bold text-2xl text-white tracking-tight">
-            LendCore
-          </span>
-        </div>
-      </div>
-
+    <>
       {/* Navigation */}
       <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
         <div className="px-3 mb-3 text-[10px] font-bold text-indigo-400/80 uppercase tracking-[0.2em]">
@@ -54,7 +59,8 @@ export function Sidebar() {
         </div>
 
         {coreNavigation.map((item) => {
-          const isActive = pathname === item.href ||
+          const isActive =
+            pathname === item.href ||
             (item.href === "/monitoring" && pathname.startsWith("/monitoring")) ||
             (item.href === "/dashboard" && pathname === "/dashboard");
           const Icon = item.icon;
@@ -63,6 +69,7 @@ export function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
+              onClick={onNavClick}
               className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all group ${
                 isActive
                   ? "nav-item-active"
@@ -70,10 +77,8 @@ export function Sidebar() {
               }`}
             >
               <Icon
-                className={`w-4 h-4 ${
-                  isActive
-                    ? "text-indigo-400"
-                    : "text-slate-500 group-hover:text-indigo-300"
+                className={`w-4 h-4 flex-shrink-0 ${
+                  isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-indigo-300"
                 } transition-colors`}
               />
               {item.name}
@@ -93,6 +98,7 @@ export function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
+              onClick={onNavClick}
               className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all group ${
                 isActive
                   ? "nav-item-active"
@@ -100,10 +106,8 @@ export function Sidebar() {
               }`}
             >
               <Icon
-                className={`w-4 h-4 ${
-                  isActive
-                    ? "text-indigo-400"
-                    : "text-slate-500 group-hover:text-indigo-300"
+                className={`w-4 h-4 flex-shrink-0 ${
+                  isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-indigo-300"
                 } transition-colors`}
               />
               {item.name}
@@ -128,7 +132,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Wallet — RainbowKit Custom Button */}
+      {/* Wallet */}
       <div className="p-4 border-t border-midnight-700/50 flex-shrink-0">
         <ConnectButton.Custom>
           {({ account, chain, openAccountModal, openConnectModal, mounted }) => {
@@ -162,6 +166,63 @@ export function Sidebar() {
           }}
         </ConnectButton.Custom>
       </div>
-    </aside>
+    </>
+  );
+}
+
+// ── Main export ───────────────────────────────────────────────────────────────
+export function Sidebar() {
+  const { mobileMenuOpen, closeMobileMenu } = useAppStore();
+
+  return (
+    <>
+      {/* ── Mobile drawer ─────────────────────────────────────────────────── */}
+
+      {/* Backdrop */}
+      <div
+        className={`fixed inset-0 z-40 md:hidden bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${
+          mobileMenuOpen
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
+        }`}
+        onClick={closeMobileMenu}
+        aria-hidden="true"
+      />
+
+      {/* Slide-in panel */}
+      <aside
+        className={`fixed top-0 left-0 w-72 h-screen z-50 flex flex-col md:hidden border-r border-midnight-700/50 bg-midnight-950/95 backdrop-blur-xl transform transition-transform duration-300 ease-in-out ${
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+        aria-label="Mobile navigation"
+      >
+        {/* Logo + close button */}
+        <div className="h-20 flex items-center justify-between px-6 border-b border-midnight-700/50 flex-shrink-0">
+          <SidebarLogo />
+          <button
+            onClick={closeMobileMenu}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            aria-label="Close menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <SidebarContent onNavClick={closeMobileMenu} />
+      </aside>
+
+      {/* ── Desktop sidebar ────────────────────────────────────────────────── */}
+      <aside
+        className="fixed top-0 left-0 w-72 h-screen border-r border-midnight-700/50 flex-col bg-midnight-950/80 backdrop-blur-xl hidden md:flex z-50"
+        aria-label="Main navigation"
+      >
+        {/* Logo */}
+        <div className="h-20 flex items-center px-6 border-b border-midnight-700/50 flex-shrink-0">
+          <SidebarLogo />
+        </div>
+
+        <SidebarContent />
+      </aside>
+    </>
   );
 }

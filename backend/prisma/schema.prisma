@@ -2,13 +2,14 @@
 // Database: PostgreSQL (Supabase)
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
-  compilerBuild = "fast"
+  provider        = "prisma-client-js"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // =============================================================================
@@ -82,6 +83,7 @@ model Market {
   snapshots    MarketSnapshot[]
   positions    UserPositionSnapshot[]
   liquidations LiquidationEvent[]
+  params       MarketParams?
 }
 
 /// Periodic market-level state snapshot.
@@ -145,6 +147,28 @@ model UserPositionSnapshot {
 
   @@index([userAddress, marketId])
   @@index([marketId, timestamp])
+}
+
+/// Persisted IRM and risk parameters per market.
+/// Seeded from on-chain on startup; overridable by admin API.
+model MarketParams {
+  id       String @id @default(uuid())
+  marketId String @unique
+  market   Market @relation(fields: [marketId], references: [id])
+
+  // Interest Rate Model parameters (from InterestRateModel contract)
+  baseRate           Decimal @db.Decimal(18, 6)
+  slope1             Decimal @db.Decimal(18, 6)
+  slope2             Decimal @db.Decimal(18, 6)
+  optimalUtilization Decimal @db.Decimal(18, 6)
+
+  // Market risk parameters (from MarketV1 contract)
+  lltv               Decimal @db.Decimal(18, 6)
+  liquidationPenalty Decimal @db.Decimal(18, 6)
+  protocolFee        Decimal @db.Decimal(18, 6)
+
+  updatedAt DateTime @updatedAt
+  updatedBy String   @default("chain") // "chain" | "admin:<address>"
 }
 
 // =============================================================================

@@ -15,7 +15,7 @@ import { ERC20_ABI, VAULT_ABI } from "@/lib/contracts"
 import { VAULT_REGISTRY } from "@/lib/vault-registry"
 import { useAppStore } from "@/store/useAppStore"
 import { useVaults } from "@/hooks/useVaults"
-import { computeSupplyAPY, formatRate } from "@/lib/irm"
+import { formatRate } from "@/lib/irm"
 import { Tooltip } from "@/components/Tooltip"
 import { TransactionStepper, type TransactionStep } from "./TransactionStepper"
 import { Wallet, ArrowDownToLine, ArrowUpFromLine } from "lucide-react"
@@ -92,7 +92,8 @@ export function DepositForm() {
     (v) => v.vaultAddress.toLowerCase() === vaultAddress.toLowerCase()
   )
   const utilization = vaultSnapshot?.utilization ?? 0
-  const supplyAPY = computeSupplyAPY(utilization)
+  // Use live lending rate from backend snapshot — authoritative, never hardcoded
+  const supplyAPY = vaultSnapshot?.lendingRate ?? 0
   const weeklyYield =
     parsedAmount > 0n && supplyAPY > 0
       ? (Number(formatUnits(parsedAmount, token.decimals)) * supplyAPY) / 52

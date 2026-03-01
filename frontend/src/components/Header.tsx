@@ -29,7 +29,7 @@ export function Header({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { isSimulation, toggleMode } = useSimulationStore();
-  const { triggerRefresh } = useAppStore();
+  const { triggerRefresh, openMobileMenu } = useAppStore();
 
   const fetchMetrics = async () => {
     try {
@@ -65,7 +65,11 @@ export function Header({
     <header className="h-16 border-b border-midnight-700/50 flex items-center justify-between px-4 sm:px-8 bg-midnight-950/80 backdrop-blur-md sticky top-0 z-40 w-full">
       {/* Left: Breadcrumbs */}
       <div className="flex items-center gap-4">
-        <button className="md:hidden p-2 text-slate-400 hover:text-white">
+        <button
+          onClick={openMobileMenu}
+          className="md:hidden p-2 -ml-1 text-slate-400 hover:text-white transition-colors"
+          aria-label="Open menu"
+        >
           <Menu className="w-6 h-6" />
         </button>
         <div className="flex items-center gap-2 text-sm text-slate-500">
